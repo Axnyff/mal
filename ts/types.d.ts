@@ -1,7 +1,7 @@
 import { Env } from "./env";
 type Primitive = Sym | Num | Err | Bool | Nil | Str;
 
-type Data = Primitive | List | Fun | Atom;
+type Data = Primitive | List | Fun | Atom | Vector;
 
 type Atom = {
   type: "atom";
@@ -60,5 +60,10 @@ type Num = {
 
 type List = {
   type: "list";
+  value: Data[];
+};
+
+type Vector = {
+  type: "vector";
   value: Data[];
 };

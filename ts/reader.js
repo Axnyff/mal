@@ -31,6 +31,8 @@ var read_form = function (reader) {
     switch (token[0]) {
         case "(":
             return read_list(reader);
+        case "[":
+            return read_vector(reader);
         default:
             return read_atom(reader);
     }
@@ -48,6 +50,19 @@ var read_list = function (reader) {
         value: list_content
     };
 };
+var read_vector = function (reader) {
+    var vector_content = [];
+    reader.next();
+    while (reader.peek()[0] !== "]") {
+        var form = read_form(reader);
+        vector_content.push(form);
+    }
+    reader.next();
+    return {
+        type: "vector",
+        value: vector_content
+    };
+};
 var read_atom = function (reader) {
     var token = reader.next();
     if (token === "false" || token === "true") {
@@ -62,6 +77,12 @@ var read_atom = function (reader) {
         };
     }
     if (token[0] == '"') {
+        if (token[token.length - 1] !== "") {
+            return {
+                type: "error",
+                value: ".*(EOF|end of input|unbalanced).*"
+            };
+        }
         return {
             type: "string",
             value: token.slice(1, -1).replace(/\\"/g, '"'),
@@ -86,7 +107,7 @@ exports.read_str = function (input) {
     }
     catch (e) {
         return {
-            type: "symbol",
+            type: "error",
             value: ".*(EOF|end of input|unbalanced).*"
         };
     }

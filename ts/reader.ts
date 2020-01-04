@@ -1,4 +1,4 @@
-import { List, Primitive, Data } from './types';
+import { List, Vector, Primitive, Data } from './types';
 
 class Reader {
   position: number;
@@ -35,10 +35,14 @@ const read_form = (reader: Reader): Data => {
     case "(":
       return read_list(reader);
 
+    case "[":
+      return read_vector(reader);
+
     default:
       return read_atom(reader);
   }
 };
+
 
 const read_list = (reader: Reader): List => {
   const list_content = [];
@@ -51,6 +55,20 @@ const read_list = (reader: Reader): List => {
   return {
     type: "list",
     value: list_content
+  };
+};
+
+const read_vector = (reader: Reader): Vector => {
+  const vector_content = [];
+  reader.next();
+  while (reader.peek()[0] !== "]") {
+    const form = read_form(reader);
+    vector_content.push(form);
+  }
+  reader.next();
+  return {
+    type: "vector",
+    value: vector_content
   };
 };
 
@@ -68,6 +86,12 @@ const read_atom = (reader: Reader): Primitive => {
     };
   }
   if (token[0] == '"') {
+    if (token[token.length - 1] !== "") {
+      return {
+        type: "error",
+        value: ".*(EOF|end of input|unbalanced).*"
+      };
+    }
     return {
       type: "string",
       value: token.slice(1, -1).replace(/\\"/g, '"'),
@@ -92,7 +116,7 @@ export const read_str = (input: string): Data => {
     return read_form(reader);
   } catch (e) {
     return {
-      type: "symbol",
+      type: "error",
       value: ".*(EOF|end of input|unbalanced).*"
     };
   }
