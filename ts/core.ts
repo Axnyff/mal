@@ -1,10 +1,10 @@
 import fs from "fs";
-import { Data, Fun, Bool, Str, Err, Num, Atom } from "./types";
+import { Data, Fun, Bool, Str, Err, Num, List, Atom } from "./types";
 import { pr_str } from "./printer";
 import { read_str } from "./reader";
 
 const prn = (arg: Data): Data => {
-  console.log(pr_str(arg));
+  console.log(pr_str(arg, true));
   return {
     type: "nil"
   };
@@ -114,12 +114,20 @@ const do_reset = (atom: Atom, value: Data): Data => {
   return value;
 };
 
-const do_swap = (atom: Atom, func: Fun): Data => {
-  atom.value = func.value.fn(atom.value);
+const do_swap = (atom: Atom, func: Fun, ...args: Data[]): Data => {
+  atom.value = func.value.fn(...[atom.value, ...args]);
   return atom.value;
 };
 
+const cons = (ast: Data, list: List): Data=> ({
+  type: 'list',
+  value: [ast, ...list.value],
+});
 
+const concat = (...args: List[]): List => ({
+  type: 'list',
+  value: args.reduce((acc, { value }) => acc.concat(value), [] as Data[]),
+});
 
 export const ns: { [K: string]: Fun } = {
   prn: {
@@ -183,7 +191,7 @@ export const ns: { [K: string]: Fun } = {
           const content = fs.readFileSync(filename.value);
           return {
             type: "string",
-            value: content.toString()
+            value: content.toString().replace(/\n/g, "\\n"),
           };
         } catch (err) {
           return {
@@ -202,6 +210,10 @@ export const ns: { [K: string]: Fun } = {
     type: "function",
     value: { fn: is_atom }
   },
+  "deref": {
+    type: "function",
+    value: { fn: deref }
+  },
   "reset!": {
     type: "function",
     value: { fn: do_reset }
@@ -209,5 +221,13 @@ export const ns: { [K: string]: Fun } = {
   "swap!": {
     type: "function",
     value: { fn: do_swap }
+  },
+  "cons": {
+    type: "function",
+    value: { fn: cons }
+  },
+  "concat": {
+    type: "function",
+    value: { fn: concat }
   },
 };

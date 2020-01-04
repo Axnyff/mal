@@ -1,4 +1,11 @@
 "use strict";
+var __spreadArrays = (this && this.__spreadArrays) || function () {
+    for (var s = 0, i = 0, il = arguments.length; i < il; i++) s += arguments[i].length;
+    for (var r = Array(s), k = 0, i = 0; i < il; i++)
+        for (var a = arguments[i], j = 0, jl = a.length; j < jl; j++, k++)
+            r[k] = a[j];
+    return r;
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -7,7 +14,7 @@ var fs_1 = __importDefault(require("fs"));
 var printer_1 = require("./printer");
 var reader_1 = require("./reader");
 var prn = function (arg) {
-    console.log(printer_1.pr_str(arg));
+    console.log(printer_1.pr_str(arg, true));
     return {
         type: "nil"
     };
@@ -105,8 +112,30 @@ var do_reset = function (atom, value) {
     return value;
 };
 var do_swap = function (atom, func) {
-    atom.value = func.value.fn(atom.value);
+    var _a;
+    var args = [];
+    for (var _i = 2; _i < arguments.length; _i++) {
+        args[_i - 2] = arguments[_i];
+    }
+    atom.value = (_a = func.value).fn.apply(_a, __spreadArrays([atom.value], args));
     return atom.value;
+};
+var cons = function (ast, list) { return ({
+    type: 'list',
+    value: __spreadArrays([ast], list.value),
+}); };
+var concat = function () {
+    var args = [];
+    for (var _i = 0; _i < arguments.length; _i++) {
+        args[_i] = arguments[_i];
+    }
+    return ({
+        type: 'list',
+        value: args.reduce(function (acc, _a) {
+            var value = _a.value;
+            return acc.concat(value);
+        }, []),
+    });
 };
 exports.ns = {
     prn: {
@@ -176,7 +205,7 @@ exports.ns = {
                     var content = fs_1.default.readFileSync(filename.value);
                     return {
                         type: "string",
-                        value: content.toString()
+                        value: content.toString().replace(/\n/g, "\\n"),
                     };
                 }
                 catch (err) {
@@ -196,6 +225,10 @@ exports.ns = {
         type: "function",
         value: { fn: is_atom }
     },
+    "deref": {
+        type: "function",
+        value: { fn: deref }
+    },
     "reset!": {
         type: "function",
         value: { fn: do_reset }
@@ -203,5 +236,13 @@ exports.ns = {
     "swap!": {
         type: "function",
         value: { fn: do_swap }
+    },
+    "cons": {
+        type: "function",
+        value: { fn: cons }
+    },
+    "concat": {
+        type: "function",
+        value: { fn: concat }
     },
 };

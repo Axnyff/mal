@@ -1,4 +1,11 @@
 "use strict";
+var __spreadArrays = (this && this.__spreadArrays) || function () {
+    for (var s = 0, i = 0, il = arguments.length; i < il; i++) s += arguments[i].length;
+    for (var r = Array(s), k = 0, i = 0; i < il; i++)
+        for (var a = arguments[i], j = 0, jl = a.length; j < jl; j++, k++)
+            r[k] = a[j];
+    return r;
+};
 var printer_1 = require("./printer");
 var reader_1 = require("./reader");
 var env_1 = require("./env");
@@ -77,6 +84,50 @@ var eval_ast = function (ast, env) {
     }
     return ast;
 };
+var isPair = function (ast) {
+    return ast.type === "list" && ast.value.length !== 0;
+};
+var quasiquote = function (ast) {
+    if (!isPair(ast)) {
+        return {
+            type: "list",
+            value: [
+                {
+                    type: "symbol",
+                    value: "quote"
+                },
+                ast
+            ]
+        };
+    }
+    if (ast.value[0].value === "unquote") {
+        return ast.value[1];
+    }
+    if (isPair(ast.value[0])) {
+        if (ast.value[0].value[0].value === "splice-unquote") {
+            return {
+                type: "list",
+                value: __spreadArrays([
+                    {
+                        type: "symbol",
+                        value: "concat"
+                    }
+                ], ast.value.slice(1), ast.value[0].value.slice(1))
+            };
+        }
+    }
+    return {
+        type: "list",
+        value: [
+            {
+                type: "symbol",
+                value: "cons"
+            },
+            quasiquote(ast.value[0]),
+            quasiquote({ type: "list", value: ast.value.slice(1) })
+        ]
+    };
+};
 var EVAL = function (ast, env) {
     var _loop_1 = function () {
         var _a;
@@ -85,6 +136,13 @@ var EVAL = function (ast, env) {
         }
         if (ast.value.length === 0) {
             return { value: ast };
+        }
+        if (ast.value[0].value === "quote") {
+            return { value: ast.value[1] };
+        }
+        if (ast.value[0].value === "quasiquote") {
+            ast = quasiquote(ast.value[1]);
+            return "continue";
         }
         if (ast.value[0].value === "def!") {
             if (ast.value[1].type !== "symbol") {
@@ -223,11 +281,13 @@ var EVAL = function (ast, env) {
             return state_1.value;
     }
 };
-var rep = function (input) { return printer_1.pr_str(EVAL(reader_1.read_str(input), repl_env)); };
-console.log(rep("(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\\nnil)\")))))"));
+var rep = function (input) {
+    return console.log(printer_1.pr_str(EVAL(reader_1.read_str(input), repl_env)));
+};
+rep("(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\\nnil)\")))))");
 process.stdout.write("user> ");
 rl.on("line", function (line) {
-    console.log(rep(line));
+    rep(line);
     process.stdout.write("user> ");
 });
 module.exports = {};

@@ -28,7 +28,7 @@ type Fun = CustomFun | RegularFun;
 type CustomFun = {
   type: "function";
   value: {
-    ast: List;
+    ast: Data;
     params: List;
     env: Env;
     fn: (...args: any[]) => Data;

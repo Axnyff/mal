@@ -1,18 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pr_str = function (data, print_readability) {
-    if (print_readability === void 0) { print_readability = false; }
+    if (print_readability === void 0) { print_readability = true; }
     if (!data) {
         return "";
     }
     if (data.type === "atom") {
-        return "Atom<" + exports.pr_str(data.value, print_readability) + ">";
+        return "(atom " + exports.pr_str(data.value, print_readability) + ")";
     }
     if (data.type === "string") {
         if (print_readability) {
             return "\"" + data.value + "\"";
         }
-        return data.value.replace(/\\n/g, "");
+        return data.value.replace(/\\n/g, "\n");
     }
     if (data.type === "number") {
         return data.value.toString();

@@ -1,4 +1,4 @@
-import { Num, Data } from "./types";
+import { Num, Data, List } from "./types";
 import { pr_str } from "./printer";
 import { read_str } from "./reader";
 import { Env } from "./env";
@@ -79,6 +79,54 @@ const eval_ast = (ast: Data, env: Env): Data => {
   return ast;
 };
 
+const isPair = (ast: Data): ast is List =>
+  ast.type === "list" && ast.value.length !== 0;
+
+const quasiquote = (ast: Data): Data => {
+  if (!isPair(ast)) {
+    return {
+      type: "list",
+      value: [
+        {
+          type: "symbol",
+          value: "quote"
+        },
+        ast
+      ]
+    };
+  }
+  if (ast.value[0].value === "unquote") {
+    return ast.value[1];
+  }
+
+  if (isPair(ast.value[0])) {
+    if (ast.value[0].value[0].value === "splice-unquote") {
+      return {
+        type: "list",
+        value: [
+          {
+            type: "symbol",
+            value: "concat"
+          },
+          ...ast.value.slice(1),
+          ...ast.value[0].value.slice(1),
+        ]
+      };
+    }
+  }
+  return {
+    type: "list",
+    value: [
+      {
+        type: "symbol",
+        value: "cons"
+      },
+      quasiquote(ast.value[0]),
+      quasiquote({ type: "list", value: ast.value.slice(1)})
+    ]
+  };
+};
+
 const EVAL = (ast: Data, env: Env): Data => {
   while (true) {
     if (ast.type !== "list") {
@@ -87,6 +135,14 @@ const EVAL = (ast: Data, env: Env): Data => {
     if (ast.value.length === 0) {
       return ast;
     }
+    if (ast.value[0].value === "quote") {
+      return ast.value[1];
+    }
+    if (ast.value[0].value === "quasiquote") {
+      ast = quasiquote(ast.value[1]);
+      continue;
+    }
+
     if (ast.value[0].value === "def!") {
       if (ast.value[1].type !== "symbol") {
         throw new Error("Should be a symbol");
@@ -219,17 +275,16 @@ const EVAL = (ast: Data, env: Env): Data => {
   }
 };
 
-const rep = (input: string) => pr_str(EVAL(read_str(input), repl_env));
+const rep = (input: string) =>
+  console.log(pr_str(EVAL(read_str(input), repl_env)));
 
-console.log(
-  rep(
-    `(def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\\nnil)")))))`
-  )
+rep(
+  `(def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\\nnil)")))))`
 );
 
 process.stdout.write("user> ");
 rl.on("line", (line: string) => {
-  console.log(rep(line));
+  rep(line);
   process.stdout.write("user> ");
 });
 

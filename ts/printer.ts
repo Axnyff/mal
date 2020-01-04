@@ -1,20 +1,20 @@
 import { Data } from "./types";
 export const pr_str = (
   data: Data,
-  print_readability: boolean = false
+  print_readability: boolean = true
 ): string => {
   if (!data) {
     return "";
   }
   if (data.type === "atom") {
-    return `Atom<${pr_str(data.value, print_readability)}>`;
+    return `(atom ${pr_str(data.value, print_readability)})`;
   }
 
   if (data.type === "string") {
     if (print_readability) {
       return `"${data.value}"`;
     }
-    return data.value.replace(/\\n/g, "");
+    return data.value.replace(/\\n/g, "\n");
   }
 
   if (data.type === "number") {
