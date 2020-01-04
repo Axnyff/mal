@@ -1,3 +1,5 @@
+import { List, Primitive, Data } from './types';
+
 class Reader {
   position: number;
   tokens: string[];
@@ -54,6 +56,23 @@ const read_list = (reader: Reader): List => {
 
 const read_atom = (reader: Reader): Primitive => {
   const token = reader.next();
+  if (token === "false" || token === "true") {
+    return {
+      type: "bool",
+      value: token === "true"
+    };
+  }
+  if (token === "nil") {
+    return {
+      type: "nil"
+    };
+  }
+  if (token[0] == '"') {
+    return {
+      type: "string",
+      value: token.replace(/"/g, "")
+    };
+  }
   if (Number.isNaN(parseFloat(token))) {
     return {
       type: "symbol",
