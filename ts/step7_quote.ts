@@ -108,8 +108,8 @@ const quasiquote = (ast: Data): Data => {
             type: "symbol",
             value: "concat"
           },
-          ...ast.value.slice(1),
-          ...ast.value[0].value.slice(1),
+          ast.value[0].value[1],
+          quasiquote({ type: "list", value: ast.value.slice(1)})
         ]
       };
     }

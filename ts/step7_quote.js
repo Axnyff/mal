@@ -1,11 +1,4 @@
 "use strict";
-var __spreadArrays = (this && this.__spreadArrays) || function () {
-    for (var s = 0, i = 0, il = arguments.length; i < il; i++) s += arguments[i].length;
-    for (var r = Array(s), k = 0, i = 0; i < il; i++)
-        for (var a = arguments[i], j = 0, jl = a.length; j < jl; j++, k++)
-            r[k] = a[j];
-    return r;
-};
 var printer_1 = require("./printer");
 var reader_1 = require("./reader");
 var env_1 = require("./env");
@@ -107,12 +100,14 @@ var quasiquote = function (ast) {
         if (ast.value[0].value[0].value === "splice-unquote") {
             return {
                 type: "list",
-                value: __spreadArrays([
+                value: [
                     {
                         type: "symbol",
                         value: "concat"
-                    }
-                ], ast.value.slice(1), ast.value[0].value.slice(1))
+                    },
+                    ast.value[0].value[1],
+                    quasiquote({ type: "list", value: ast.value.slice(1) })
+                ]
             };
         }
     }
