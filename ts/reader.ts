@@ -1,4 +1,4 @@
-import { List, Vector, Primitive, Data } from './types';
+import { List, Vector, HashMap, Primitive, Data, Err } from "./types";
 
 class Reader {
   position: number;
@@ -26,23 +26,101 @@ const tokenize = (input: string) => {
     }
     match = regex.exec(input);
   }
+
   return tokens;
 };
 
 const read_form = (reader: Reader): Data => {
   const token = reader.peek();
-  switch (token[0]) {
+  switch (token) {
+    case "@":
+      reader.next();
+      return {
+        type: "list",
+        value: [
+          {
+            type: "symbol",
+            value: "deref"
+          },
+          read_form(reader)
+        ]
+      };
+    case "'":
+      reader.next();
+      return {
+        type: "list",
+        value: [
+          {
+            type: "symbol",
+            value: "quote"
+          },
+          read_form(reader)
+        ]
+      };
+    case "`":
+      reader.next();
+      return {
+        type: "list",
+        value: [
+          {
+            type: "symbol",
+            value: "quasiquote"
+          },
+          read_form(reader)
+        ]
+      };
+    case "^":
+      reader.next();
+      const meta = read_form(reader);
+      const content = read_form(reader);
+      return {
+        type: "list",
+        value: [
+          {
+            type: "symbol",
+            value: "with-meta"
+          },
+          content,
+          meta
+        ]
+      };
+    case "~":
+      reader.next();
+      return {
+        type: "list",
+        value: [
+          {
+            type: "symbol",
+            value: "unquote"
+          },
+          read_form(reader)
+        ]
+      };
+    case "~@":
+      reader.next();
+      return {
+        type: "list",
+        value: [
+          {
+            type: "symbol",
+            value: "splice-unquote"
+          },
+          read_form(reader)
+        ]
+      };
     case "(":
       return read_list(reader);
 
     case "[":
       return read_vector(reader);
 
+    case "{":
+      return read_map(reader);
+
     default:
       return read_atom(reader);
   }
 };
-
 
 const read_list = (reader: Reader): List => {
   const list_content = [];
@@ -72,6 +150,27 @@ const read_vector = (reader: Reader): Vector => {
   };
 };
 
+const read_map = (reader: Reader): HashMap | Err => {
+  const map_content: HashMap["value"] = {};
+  reader.next();
+  while (reader.peek()[0] !== "}") {
+    const key = read_form(reader);
+    if (key.type !== "string" && key.type !== "keyword") {
+      return {
+        type: "error",
+        value: "wrong key for maop"
+      };
+    }
+    const value = read_form(reader);
+    map_content[key.value] = value;
+  }
+  reader.next();
+  return {
+    type: "map",
+    value: map_content
+  };
+};
+
 const read_atom = (reader: Reader): Primitive => {
   const token = reader.next();
   if (token === "false" || token === "true") {
@@ -85,13 +184,22 @@ const read_atom = (reader: Reader): Primitive => {
       type: "nil"
     };
   }
+  if (token[0] == ":") {
+    return {
+      type: "keyword",
+      value: `\u029E${token}`
+    };
+  }
   if (token[0] == '"') {
-    if (token[token.length - 1] !== "") {
+
+    const valid = token.match(/^"(\\[n"\\]|[^\\"])*"$/);
+    if (!valid ) {
       return {
         type: "error",
         value: ".*(EOF|end of input|unbalanced).*"
       };
     }
+
     return {
       type: "string",
       value: token.slice(1, -1).replace(/\\"/g, '"'),

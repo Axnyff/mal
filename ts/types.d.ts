@@ -1,7 +1,7 @@
 import { Env } from "./env";
-type Primitive = Sym | Num | Err | Bool | Nil | Str;
+type Primitive = Sym | Num | Err | Bool | Nil | Str | Keyword;
 
-type Data = Primitive | List | Fun | Atom | Vector;
+type Data = Primitive | List | Fun | Atom | Vector | HashMap;
 
 type Atom = {
   type: "atom";
@@ -48,6 +48,11 @@ type Err = {
   value: string;
 };
 
+type Keyword = {
+  type: "keyword";
+  value: string;
+};
+
 type Sym = {
   type: "symbol";
   value: string;
@@ -66,4 +71,9 @@ type List = {
 type Vector = {
   type: "vector";
   value: Data[];
+};
+
+type HashMap = {
+  type: "map";
+  value: { [K: string]: Data };
 };

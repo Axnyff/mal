@@ -28,11 +28,88 @@ var tokenize = function (input) {
 };
 var read_form = function (reader) {
     var token = reader.peek();
-    switch (token[0]) {
+    switch (token) {
+        case "@":
+            reader.next();
+            return {
+                type: "list",
+                value: [
+                    {
+                        type: "symbol",
+                        value: "deref"
+                    },
+                    read_form(reader)
+                ]
+            };
+        case "'":
+            reader.next();
+            return {
+                type: "list",
+                value: [
+                    {
+                        type: "symbol",
+                        value: "quote"
+                    },
+                    read_form(reader)
+                ]
+            };
+        case "`":
+            reader.next();
+            return {
+                type: "list",
+                value: [
+                    {
+                        type: "symbol",
+                        value: "quasiquote"
+                    },
+                    read_form(reader)
+                ]
+            };
+        case "^":
+            reader.next();
+            var meta = read_form(reader);
+            var content = read_form(reader);
+            return {
+                type: "list",
+                value: [
+                    {
+                        type: "symbol",
+                        value: "with-meta"
+                    },
+                    content,
+                    meta
+                ]
+            };
+        case "~":
+            reader.next();
+            return {
+                type: "list",
+                value: [
+                    {
+                        type: "symbol",
+                        value: "unquote"
+                    },
+                    read_form(reader)
+                ]
+            };
+        case "~@":
+            reader.next();
+            return {
+                type: "list",
+                value: [
+                    {
+                        type: "symbol",
+                        value: "splice-unquote"
+                    },
+                    read_form(reader)
+                ]
+            };
         case "(":
             return read_list(reader);
         case "[":
             return read_vector(reader);
+        case "{":
+            return read_map(reader);
         default:
             return read_atom(reader);
     }
@@ -63,6 +140,26 @@ var read_vector = function (reader) {
         value: vector_content
     };
 };
+var read_map = function (reader) {
+    var map_content = {};
+    reader.next();
+    while (reader.peek()[0] !== "}") {
+        var key = read_form(reader);
+        if (key.type !== "string" && key.type !== "keyword") {
+            return {
+                type: "error",
+                value: "wrong key for maop"
+            };
+        }
+        var value = read_form(reader);
+        map_content[key.value] = value;
+    }
+    reader.next();
+    return {
+        type: "map",
+        value: map_content
+    };
+};
 var read_atom = function (reader) {
     var token = reader.next();
     if (token === "false" || token === "true") {
@@ -76,8 +173,15 @@ var read_atom = function (reader) {
             type: "nil"
         };
     }
+    if (token[0] == ":") {
+        return {
+            type: "keyword",
+            value: "\u029E" + token
+        };
+    }
     if (token[0] == '"') {
-        if (token[token.length - 1] !== "") {
+        var valid = token.match(/^"(\\[n"\\]|[^\\"])*"$/);
+        if (!valid) {
             return {
                 type: "error",
                 value: ".*(EOF|end of input|unbalanced).*"
