@@ -140,6 +140,7 @@ var quasiquote = function (ast) {
     };
 };
 var EVAL = function (ast, env) {
+    var i = 0;
     var _loop_1 = function () {
         var _a;
         if (ast.type !== "list") {
@@ -174,15 +175,15 @@ var EVAL = function (ast, env) {
             if (bindings.length % 2 !== 0) {
                 throw new Error("Bindings should not be odd length");
             }
-            var i = 0;
-            while (i < bindings.length) {
-                if (bindings[i].type !== "symbol") {
+            var i_1 = 0;
+            while (i_1 < bindings.length) {
+                if (bindings[i_1].type !== "symbol") {
                     throw new Error("Bindings should be a symbol");
                 }
                 else {
-                    new_env.set(bindings[i].value, EVAL(bindings[i + 1], new_env));
+                    new_env.set(bindings[i_1].value, EVAL(bindings[i_1 + 1], new_env));
                 }
-                i += 2;
+                i_1 += 2;
             }
             ast = ast.value[2];
             env = new_env;
@@ -230,14 +231,14 @@ var EVAL = function (ast, env) {
                             }
                             try {
                                 var new_env = new env_1.Env(env);
-                                for (var i = 0; i < args.length; i++) {
-                                    if (bindings_1.value[i].type !== "symbol") {
+                                for (var i_2 = 0; i_2 < args.length; i_2++) {
+                                    if (bindings_1.value[i_2].type !== "symbol") {
                                         return {
                                             type: "error",
                                             value: "Function bindings should all be args"
                                         };
                                     }
-                                    new_env.set(bindings_1.value[i].value, args[i]);
+                                    new_env.set(bindings_1.value[i_2].value, args[i_2]);
                                 }
                                 return EVAL(content_1, new_env);
                             }
@@ -271,24 +272,24 @@ var EVAL = function (ast, env) {
         if (fnValue.params) {
             var args = evaluated.value.slice(1);
             ast = fnValue.ast;
-            var new_env = new env_1.Env(env);
-            for (var i = 0; i < args.length; i++) {
-                if (fnValue.params.value[i].type !== "symbol") {
+            var new_env = new env_1.Env(fnValue.env);
+            for (var i_3 = 0; i_3 < fnValue.params.value.length; i_3++) {
+                if (fnValue.params.value[i_3].type !== "symbol") {
                     return { value: {
                             type: "error",
                             value: "Function bindings should all be args"
                         } };
                 }
                 // variadic arguments
-                if (fnValue.params.value[i].value === "&") {
-                    new_env.set(fnValue.params.value[i + 1].value, {
+                if (fnValue.params.value[i_3].value === "&") {
+                    new_env.set(fnValue.params.value[i_3 + 1].value, {
                         type: "list",
-                        value: args.slice(i)
+                        value: args.slice(i_3)
                     });
                     break;
                 }
                 else {
-                    new_env.set(fnValue.params.value[i].value, args[i]);
+                    new_env.set(fnValue.params.value[i_3].value, args[i_3]);
                 }
             }
             env = new_env;

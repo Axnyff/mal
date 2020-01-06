@@ -275,7 +275,7 @@ const EVAL = (ast: Data, env: Env): Data => {
       const args = evaluated.value.slice(1);
       ast = fnValue.ast;
       const new_env = new Env(fnValue.env);
-      for (let i = 0; i < args.length; i++) {
+      for (let i = 0; i < fnValue.params.value.length; i++) {
         if (fnValue.params.value[i].type !== "symbol") {
           return {
             type: "error",

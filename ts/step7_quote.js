@@ -273,7 +273,7 @@ var EVAL = function (ast, env) {
             var args = evaluated.value.slice(1);
             ast = fnValue.ast;
             var new_env = new env_1.Env(fnValue.env);
-            for (var i_3 = 0; i_3 < args.length; i_3++) {
+            for (var i_3 = 0; i_3 < fnValue.params.value.length; i_3++) {
                 if (fnValue.params.value[i_3].type !== "symbol") {
                     return { value: {
                             type: "error",

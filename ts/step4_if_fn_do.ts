@@ -143,6 +143,7 @@ const quasiquote = (ast: Data): Data => {
 };
 
 const EVAL = (ast: Data, env: Env): Data => {
+  let i = 0;
   while (true) {
     if (ast.type !== "list") {
       return eval_ast(ast, env);
@@ -273,8 +274,8 @@ const EVAL = (ast: Data, env: Env): Data => {
     if (fnValue.params) {
       const args = evaluated.value.slice(1);
       ast = fnValue.ast;
-      const new_env = new Env(env);
-      for (let i = 0; i < args.length; i++) {
+      const new_env = new Env(fnValue.env);
+      for (let i = 0; i < fnValue.params.value.length; i++) {
         if (fnValue.params.value[i].type !== "symbol") {
           return {
             type: "error",
