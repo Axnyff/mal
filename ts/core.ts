@@ -16,6 +16,7 @@ import {
 } from "./types";
 import { pr_str } from "./printer";
 import { read_str } from "./reader";
+const readline = require("readline-sync");
 
 const prn = (...args: Data[]): Data => {
   console.log(args.map(arg => pr_str(arg, true)).join(" "));
@@ -124,10 +125,9 @@ const atom = (value: Data): Atom => ({
   value
 });
 
-const is_atom = (value: Data): Bool => ({
-  type: "bool",
-  value: value.type === "atom"
-});
+const is_atom = (value: Data): Bool => toBool(value.type === "atom");
+
+const is_number = (value: Data): Bool => toBool(value.type === "number");
 
 const deref = (atom: Atom): Data => atom.value;
 
@@ -145,6 +145,40 @@ const cons = (ast: Data, list: List): Data => ({
   type: "list",
   value: [ast, ...list.value]
 });
+
+const conj = (ast: Seq, ...items: Data[]): Seq => {
+  if (ast.type === "list") {
+    return {
+      type: "list",
+      value: [...items.reverse(), ...ast.value]
+    };
+  }
+  return {
+    type: "vector",
+    value: [...ast.value, ...items]
+  };
+};
+
+const seq = (ast: Seq | Str | Nil) : Seq | Nil => {
+  if (ast.type === 'nil' || ast.value.length === 0) {
+    return {
+      type: 'nil',
+    }
+  }
+  if (ast.type === 'string') {
+    return {
+      type: 'list',
+      value: ast.value.split("").map(s => ({
+        type: 'string',
+        value: s,
+      }))
+    };
+  }
+  return {
+    type: 'list',
+    value: [...ast.value],
+  }
+};
 
 const concat = (...args: List[]): List => ({
   type: "list",
@@ -281,10 +315,10 @@ const dissoc = (map: HashMap, ...keyToRemove: Data[]): HashMap => {
 };
 
 const get = (map: HashMap | Nil, key: Str | Keyword): Data => {
-  if (map.type === 'nil') {
+  if (map.type === "nil") {
     return {
-      type: 'nil',
-    }
+      type: "nil"
+    };
   }
   const keyAndValue = Object.entries(map.value).find(([k]) => k === key.value);
   return keyAndValue
@@ -554,6 +588,90 @@ export const ns: { [K: string]: Fun } = {
     type: "function",
     value: {
       fn: vals
+    }
+  },
+  readline: {
+    type: "function",
+    value: {
+      fn: (a: Str): Data => {
+        const res = readline.question(a.value);
+        return {
+          type: "string",
+          value: res
+        };
+      }
+    }
+  },
+  "time-ms": {
+    type: "function",
+    value: {
+      fn: () => ({
+        type: "number",
+        value: Date.now()
+      })
+    }
+  },
+  meta: {
+    type: "function",
+    value: {
+      fn: (arg: Data) => {
+        return (
+          arg.meta || {
+            type: "nil"
+          }
+        );
+      }
+    }
+  },
+  "with-meta": {
+    type: "function",
+    value: {
+      fn: (a: Data, b: Data) => {
+        return {
+          ...a,
+          meta: b
+        };
+      }
+    }
+  },
+  "fn?": {
+    type: "function",
+    value: {
+      fn: (arg: Data) => {
+        return toBool(arg.type === "function" && arg.is_macro !== true);
+      }
+    }
+  },
+  "macro?": {
+    type: "function",
+    value: {
+      fn: (arg: Data) => {
+        return toBool(arg.type === "function" && arg.is_macro === true);
+      }
+    }
+  },
+  "string?": {
+    type: "function",
+    value: {
+      fn: (arg: Data) => toBool(arg.type === 'string'),
+    }
+  },
+  "number?": {
+    type: "function",
+    value: {
+      fn: is_number
+    }
+  },
+  seq: {
+    type: "function",
+    value: {
+      fn: seq,
+    }
+  },
+  conj: {
+    type: "function",
+    value: {
+      fn: conj,
     }
   }
 };

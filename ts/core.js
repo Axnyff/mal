@@ -1,4 +1,15 @@
 "use strict";
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 var __spreadArrays = (this && this.__spreadArrays) || function () {
     for (var s = 0, i = 0, il = arguments.length; i < il; i++) s += arguments[i].length;
     for (var r = Array(s), k = 0, i = 0; i < il; i++)
@@ -13,6 +24,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var fs_1 = __importDefault(require("fs"));
 var printer_1 = require("./printer");
 var reader_1 = require("./reader");
+var readline = require("readline-sync");
 var prn = function () {
     var args = [];
     for (var _i = 0; _i < arguments.length; _i++) {
@@ -109,10 +121,8 @@ var atom = function (value) { return ({
     type: "atom",
     value: value
 }); };
-var is_atom = function (value) { return ({
-    type: "bool",
-    value: value.type === "atom"
-}); };
+var is_atom = function (value) { return toBool(value.type === "atom"); };
+var is_number = function (value) { return toBool(value.type === "number"); };
 var deref = function (atom) { return atom.value; };
 var do_reset = function (atom, value) {
     atom.value = value;
@@ -131,6 +141,42 @@ var cons = function (ast, list) { return ({
     type: "list",
     value: __spreadArrays([ast], list.value)
 }); };
+var conj = function (ast) {
+    var items = [];
+    for (var _i = 1; _i < arguments.length; _i++) {
+        items[_i - 1] = arguments[_i];
+    }
+    if (ast.type === "list") {
+        return {
+            type: "list",
+            value: __spreadArrays(items.reverse(), ast.value)
+        };
+    }
+    return {
+        type: "vector",
+        value: __spreadArrays(ast.value, items)
+    };
+};
+var seq = function (ast) {
+    if (ast.type === 'nil' || ast.value.length === 0) {
+        return {
+            type: 'nil',
+        };
+    }
+    if (ast.type === 'string') {
+        return {
+            type: 'list',
+            value: ast.value.split("").map(function (s) { return ({
+                type: 'string',
+                value: s,
+            }); })
+        };
+    }
+    return {
+        type: 'list',
+        value: __spreadArrays(ast.value),
+    };
+};
 var concat = function () {
     var args = [];
     for (var _i = 0; _i < arguments.length; _i++) {
@@ -277,9 +323,9 @@ var dissoc = function (map) {
     return hashmap.apply(void 0, remainingKeyValues);
 };
 var get = function (map, key) {
-    if (map.type === 'nil') {
+    if (map.type === "nil") {
         return {
-            type: 'nil',
+            type: "nil"
         };
     }
     var keyAndValue = Object.entries(map.value).find(function (_a) {
@@ -567,6 +613,85 @@ exports.ns = {
         type: "function",
         value: {
             fn: vals
+        }
+    },
+    readline: {
+        type: "function",
+        value: {
+            fn: function (a) {
+                var res = readline.question(a.value);
+                return {
+                    type: "string",
+                    value: res
+                };
+            }
+        }
+    },
+    "time-ms": {
+        type: "function",
+        value: {
+            fn: function () { return ({
+                type: "number",
+                value: Date.now()
+            }); }
+        }
+    },
+    meta: {
+        type: "function",
+        value: {
+            fn: function (arg) {
+                return (arg.meta || {
+                    type: "nil"
+                });
+            }
+        }
+    },
+    "with-meta": {
+        type: "function",
+        value: {
+            fn: function (a, b) {
+                return __assign(__assign({}, a), { meta: b });
+            }
+        }
+    },
+    "fn?": {
+        type: "function",
+        value: {
+            fn: function (arg) {
+                return toBool(arg.type === "function" && arg.is_macro !== true);
+            }
+        }
+    },
+    "macro?": {
+        type: "function",
+        value: {
+            fn: function (arg) {
+                return toBool(arg.type === "function" && arg.is_macro === true);
+            }
+        }
+    },
+    "string?": {
+        type: "function",
+        value: {
+            fn: function (arg) { return toBool(arg.type === 'string'); },
+        }
+    },
+    "number?": {
+        type: "function",
+        value: {
+            fn: is_number
+        }
+    },
+    seq: {
+        type: "function",
+        value: {
+            fn: seq,
+        }
+    },
+    conj: {
+        type: "function",
+        value: {
+            fn: conj,
         }
     }
 };

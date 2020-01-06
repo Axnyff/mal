@@ -379,6 +379,10 @@ repl_env.set("*ARGV*", {
     type: "list",
     value: []
 });
+repl_env.set("*host-language*", {
+    type: "list",
+    value: []
+});
 if (args.length >= 1) {
     if (args.length > 1) {
         repl_env.set("*ARGV*", {

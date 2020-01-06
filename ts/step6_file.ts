@@ -4,7 +4,7 @@ import { read_str } from "./reader";
 import { Env } from "./env";
 import { ns } from "./core";
 
-const readline = require("readline");
+import { readline } from "./node_readline";
 
 const repl_env = new Env();
 repl_env.set("+", {
@@ -373,10 +373,16 @@ rep(
 const filenameIndex = process.argv.indexOf(__filename);
 const args = process.argv.slice(filenameIndex + 1);
 
+repl_env.set("*host-language*", {
+  type: "string",
+  value: "ts",
+});
+
 repl_env.set("*ARGV*", {
   type: "list",
   value: []
 });
+
 if (args.length >= 1) {
   if (args.length > 1) {
     repl_env.set("*ARGV*", {
@@ -389,14 +395,14 @@ if (args.length >= 1) {
   }
   rep(`(load-file "${args[0]}")`);
 } else {
-  process.stdout.write("user> ");
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: true
-  });
-  rl.on("line", (line: string) => {
+  while(true) {
+    const line = readline('user> ');
+    if (line === null) {
+      break;
+    }
+    if (line === "") {
+      continue
+    }
     console.log(rep(line));
-    process.stdout.write("user> ");
-  });
+  }
 }

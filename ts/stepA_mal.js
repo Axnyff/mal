@@ -15,7 +15,7 @@ var printer_1 = require("./printer");
 var reader_1 = require("./reader");
 var env_1 = require("./env");
 var core_1 = require("./core");
-var readline = require("readline");
+var node_readline_1 = require("./node_readline");
 var repl_env = new env_1.Env();
 repl_env.set("+", {
     type: "function",
@@ -375,6 +375,10 @@ rep("(def! not (fn* (a) (if a false true)))");
 rep("(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))");
 var filenameIndex = process.argv.indexOf(__filename);
 var args = process.argv.slice(filenameIndex + 1);
+repl_env.set("*host-language*", {
+    type: "string",
+    value: "ts",
+});
 repl_env.set("*ARGV*", {
     type: "list",
     value: []
@@ -392,14 +396,14 @@ if (args.length >= 1) {
     rep("(load-file \"" + args[0] + "\")");
 }
 else {
-    process.stdout.write("user> ");
-    var rl_1 = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-        terminal: true
-    });
-    rl_1.on("line", function (line) {
+    while (true) {
+        var line = node_readline_1.readline('user> ');
+        if (line === null) {
+            break;
+        }
+        if (line === "") {
+            continue;
+        }
         console.log(rep(line));
-        process.stdout.write("user> ");
-    });
+    }
 }
