@@ -143,7 +143,6 @@ const quasiquote = (ast: Data): Data => {
 };
 
 const EVAL = (ast: Data, env: Env): Data => {
-  let i = 0;
   while (true) {
     if (ast.type !== "list") {
       return eval_ast(ast, env);
@@ -171,7 +170,7 @@ const EVAL = (ast: Data, env: Env): Data => {
     }
     if (ast.value[0].value === "let*") {
       const new_env = new Env(env);
-      if (ast.value[1].type !== "list" && ast.value[1].type !== "vector") {
+      if (ast.value[1].type !== "list") {
         throw new Error("Bindings should be a list");
       }
       const bindings = ast.value[1].value;
@@ -218,7 +217,7 @@ const EVAL = (ast: Data, env: Env): Data => {
     if (ast.value[0].value === "fn*") {
       const bindings = ast.value[1];
       const content = ast.value[2];
-      if (bindings.type !== "list" && bindings.type !== 'vector') {
+      if (bindings.type !== "list") {
         return {
           type: "error",
           value: "Function bindings should be a list"
@@ -274,7 +273,7 @@ const EVAL = (ast: Data, env: Env): Data => {
     if (fnValue.params) {
       const args = evaluated.value.slice(1);
       ast = fnValue.ast;
-      const new_env = new Env(fnValue.env);
+      const new_env = new Env(env);
       for (let i = 0; i < args.length; i++) {
         if (fnValue.params.value[i].type !== "symbol") {
           return {
@@ -282,16 +281,7 @@ const EVAL = (ast: Data, env: Env): Data => {
             value: "Function bindings should all be args"
           };
         }
-        // variadic arguments
-        if (fnValue.params.value[i].value === "&") {
-          new_env.set(fnValue.params.value[i + 1].value as string, {
-            type: "list",
-            value: args.slice(i)
-          });
-          break;
-        } else {
-          new_env.set(fnValue.params.value[i].value as string, args[i]);
-        }
+        new_env.set(fnValue.params.value[i].value as string, args[i]);
       }
       env = new_env;
       continue;
@@ -306,7 +296,6 @@ const rep = (input: string) =>
 rep(
   `(def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\\nnil)")))))`
 );
-rep(`(def! not (fn* (a) (if a false true)))`);
 
 process.stdout.write("user> ");
 rl.on("line", (line: string) => {

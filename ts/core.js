@@ -48,7 +48,7 @@ var count = function (arg) {
             value: 0
         };
     }
-    if (arg.type !== "list") {
+    if (arg.type !== "list" && arg.type !== "vector") {
         return {
             type: "error",
             value: "empty? should be called on a list"
@@ -59,22 +59,42 @@ var count = function (arg) {
         value: arg.value.length
     };
 };
+var isSeq = function (a) {
+    return a.type === "list" || a.type === "vector";
+};
 var _equal = function (a, b) {
+    if (isSeq(a) && isSeq(b)) {
+        if (a.value.length !== b.value.length) {
+            return false;
+        }
+        for (var i = 0; i < a.value.length; i++) {
+            if (!_equal(a.value[i], b.value[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
     if (a.type !== b.type) {
         return false;
     }
-    if (a.type !== "list" || b.type !== "list") {
-        return a.value === b.value;
-    }
-    if (a.value.length !== b.value.length) {
-        return false;
-    }
-    for (var i = 0; i < a.value.length; i++) {
-        if (!_equal(a.value[i], b.value[i])) {
+    if (a.type === "map" && b.type === "map") {
+        var keysA = Object.keys(a.value);
+        var keysB = Object.keys(b.value);
+        if (keysA.length !== keysB.length) {
             return false;
         }
+        for (var _i = 0, keysA_1 = keysA; _i < keysA_1.length; _i++) {
+            var key = keysA_1[_i];
+            if (!keysB.includes(key)) {
+                return false;
+            }
+            if (!_equal(a.value[key], b.value[key])) {
+                return false;
+            }
+        }
+        return true;
     }
-    return true;
+    return a.value === b.value;
 };
 var equal = function (a, b) {
     return {
@@ -104,7 +124,7 @@ var atom = function (value) { return ({
 }); };
 var is_atom = function (value) { return ({
     type: "bool",
-    value: value.type === 'atom',
+    value: value.type === "atom"
 }); };
 var deref = function (atom) { return atom.value; };
 var do_reset = function (atom, value) {
@@ -121,8 +141,8 @@ var do_swap = function (atom, func) {
     return atom.value;
 };
 var cons = function (ast, list) { return ({
-    type: 'list',
-    value: __spreadArrays([ast], list.value),
+    type: "list",
+    value: __spreadArrays([ast], list.value)
 }); };
 var concat = function () {
     var args = [];
@@ -130,11 +150,11 @@ var concat = function () {
         args[_i] = arguments[_i];
     }
     return ({
-        type: 'list',
+        type: "list",
         value: args.reduce(function (acc, _a) {
             var value = _a.value;
             return acc.concat(value);
-        }, []),
+        }, [])
     });
 };
 exports.ns = {
@@ -193,6 +213,36 @@ exports.ns = {
             }
         }
     },
+    "pr-str": {
+        type: "function",
+        value: {
+            fn: function () {
+                var args = [];
+                for (var _i = 0; _i < arguments.length; _i++) {
+                    args[_i] = arguments[_i];
+                }
+                return ({
+                    type: "string",
+                    value: args.map(function (arg) { return printer_1.pr_str(arg, true); }).join(" ")
+                });
+            }
+        }
+    },
+    println: {
+        type: "function",
+        value: {
+            fn: function () {
+                var args = [];
+                for (var _i = 0; _i < arguments.length; _i++) {
+                    args[_i] = arguments[_i];
+                }
+                console.log(args.map(function (arg) { return printer_1.pr_str(arg, false); }).join(" "));
+                return {
+                    type: "nil"
+                };
+            }
+        }
+    },
     "read-string": {
         type: "function",
         value: { fn: function (a) { return reader_1.read_str(a.value); } }
@@ -205,7 +255,7 @@ exports.ns = {
                     var content = fs_1.default.readFileSync(filename.value);
                     return {
                         type: "string",
-                        value: content.toString().replace(/\n/g, "\\n"),
+                        value: content.toString().replace(/\n/g, "\\n")
                     };
                 }
                 catch (err) {
@@ -225,7 +275,7 @@ exports.ns = {
         type: "function",
         value: { fn: is_atom }
     },
-    "deref": {
+    deref: {
         type: "function",
         value: { fn: deref }
     },
@@ -237,12 +287,12 @@ exports.ns = {
         type: "function",
         value: { fn: do_swap }
     },
-    "cons": {
+    cons: {
         type: "function",
         value: { fn: cons }
     },
-    "concat": {
+    concat: {
         type: "function",
         value: { fn: concat }
-    },
+    }
 };

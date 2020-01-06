@@ -202,7 +202,7 @@ const read_atom = (reader: Reader): Primitive => {
 
     return {
       type: "string",
-      value: token.slice(1, -1).replace(/\\"/g, '"'),
+      value: token.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, "\n"),
     };
   }
   if (Number.isNaN(parseFloat(token))) {

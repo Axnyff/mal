@@ -1,3 +1,5 @@
+import { Data } from "./types";
+
 export class Env {
   outer: Env | null;
   data: { [K: string]: Data };

@@ -15,9 +15,10 @@ export const pr_str = (
 
   if (data.type === "string") {
     if (print_readability) {
-      return `"${data.value.replace(/"/g, '\\"')}"`;
+      const str = data.value.replace(/\\/g, "\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+      return `"${str}"`;
     }
-    return data.value.replace(/\\n/g, "\n");
+    return data.value;
   }
 
   if (data.type === "number") {

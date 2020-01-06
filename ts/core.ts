@@ -1,5 +1,16 @@
 import fs from "fs";
-import { Data, Fun, Bool, Str, Err, Num, List, Atom } from "./types";
+import {
+  Data,
+  Fun,
+  Bool,
+  Str,
+  Err,
+  Num,
+  Seq,
+  List,
+  Vector,
+  Atom
+} from "./types";
 import { pr_str } from "./printer";
 import { read_str } from "./reader";
 
@@ -38,7 +49,7 @@ const count = (arg: Data): Num | Err => {
       value: 0
     };
   }
-  if (arg.type !== "list") {
+  if (arg.type !== "list" && arg.type !== "vector") {
     return {
       type: "error",
       value: "empty? should be called on a list"
@@ -50,23 +61,47 @@ const count = (arg: Data): Num | Err => {
   };
 };
 
+const isSeq = (a: Data): a is Seq => {
+  return a.type === "list" || a.type === "vector";
+};
+
 const _equal = (a: Data, b: Data): boolean => {
+  if (isSeq(a) && isSeq(b)) {
+    if (a.value.length !== b.value.length) {
+      return false;
+    }
+    for (let i = 0; i < a.value.length; i++) {
+      if (!_equal(a.value[i], b.value[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
   if (a.type !== b.type) {
     return false;
   }
 
-  if (a.type !== "list" || b.type !== "list") {
-    return a.value === b.value;
-  }
-  if (a.value.length !== b.value.length) {
-    return false;
-  }
-  for (let i = 0; i < a.value.length; i++) {
-    if (!_equal(a.value[i], b.value[i])) {
+  if (a.type === "map" && b.type === "map") {
+    const keysA = Object.keys(a.value);
+    const keysB = Object.keys(b.value);
+
+    if (keysA.length !== keysB.length) {
       return false;
     }
+
+    for (let key of keysA) {
+      if (!keysB.includes(key)) {
+        return false;
+      }
+
+      if (!_equal(a.value[key], b.value[key])) {
+        return false;
+      }
+    }
+    return true;
   }
-  return true;
+
+  return a.value === b.value;
 };
 
 const equal = (a: Data, b: Data): Bool => {
@@ -104,13 +139,13 @@ const atom = (value: Data): Atom => ({
 
 const is_atom = (value: Data): Bool => ({
   type: "bool",
-  value: value.type === 'atom',
+  value: value.type === "atom"
 });
 
 const deref = (atom: Atom): Data => atom.value;
 
 const do_reset = (atom: Atom, value: Data): Data => {
-  atom.value = value
+  atom.value = value;
   return value;
 };
 
@@ -119,14 +154,14 @@ const do_swap = (atom: Atom, func: Fun, ...args: Data[]): Data => {
   return atom.value;
 };
 
-const cons = (ast: Data, list: List): Data=> ({
-  type: 'list',
-  value: [ast, ...list.value],
+const cons = (ast: Data, list: List): Data => ({
+  type: "list",
+  value: [ast, ...list.value]
 });
 
 const concat = (...args: List[]): List => ({
-  type: 'list',
-  value: args.reduce((acc, { value }) => acc.concat(value), [] as Data[]),
+  type: "list",
+  value: args.reduce((acc, { value }) => acc.concat(value), [] as Data[])
 });
 
 export const ns: { [K: string]: Fun } = {
@@ -179,6 +214,26 @@ export const ns: { [K: string]: Fun } = {
       })
     }
   },
+  "pr-str": {
+    type: "function",
+    value: {
+      fn: (...args: Data[]) => ({
+        type: "string",
+        value: args.map(arg => pr_str(arg, true)).join(" ")
+      })
+    }
+  },
+  println: {
+    type: "function",
+    value: {
+      fn: (...args: Data[]) => {
+        console.log(args.map(arg => pr_str(arg, false)).join(" "));
+        return {
+          type: "nil"
+        };
+      }
+    }
+  },
   "read-string": {
     type: "function",
     value: { fn: (a: Str) => read_str(a.value) }
@@ -191,7 +246,7 @@ export const ns: { [K: string]: Fun } = {
           const content = fs.readFileSync(filename.value);
           return {
             type: "string",
-            value: content.toString().replace(/\n/g, "\\n"),
+            value: content.toString().replace(/\n/g, "\\n")
           };
         } catch (err) {
           return {
@@ -210,7 +265,7 @@ export const ns: { [K: string]: Fun } = {
     type: "function",
     value: { fn: is_atom }
   },
-  "deref": {
+  deref: {
     type: "function",
     value: { fn: deref }
   },
@@ -222,12 +277,12 @@ export const ns: { [K: string]: Fun } = {
     type: "function",
     value: { fn: do_swap }
   },
-  "cons": {
+  cons: {
     type: "function",
     value: { fn: cons }
   },
-  "concat": {
+  concat: {
     type: "function",
     value: { fn: concat }
-  },
+  }
 };

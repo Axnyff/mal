@@ -1,7 +1,7 @@
 import { Env } from "./env";
 type Primitive = Sym | Num | Err | Bool | Nil | Str | Keyword;
 
-type Data = Primitive | List | Fun | Atom | Vector | HashMap;
+type Data = Primitive | Seq | Fun | Atom | HashMap;
 
 type Atom = {
   type: "atom";
@@ -29,7 +29,7 @@ type CustomFun = {
   type: "function";
   value: {
     ast: Data;
-    params: List;
+    params: List | Vector;
     env: Env;
     fn: (...args: any[]) => Data;
   };
@@ -62,6 +62,8 @@ type Num = {
   type: "number";
   value: number;
 };
+
+type Seq = List | Vector;
 
 type List = {
   type: "list";
