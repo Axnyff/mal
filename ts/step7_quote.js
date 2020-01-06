@@ -1,4 +1,15 @@
 "use strict";
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 var printer_1 = require("./printer");
 var reader_1 = require("./reader");
@@ -54,16 +65,7 @@ Object.entries(core_1.ns).forEach(function (_a) {
 });
 var eval_ast = function (ast, env) {
     if (ast.type === "symbol") {
-        try {
-            var val = env.get(ast.value);
-            return val;
-        }
-        catch (err) {
-            return {
-                type: "error",
-                value: ".*'" + ast.value + "' not found.*'"
-            };
-        }
+        return env.get(ast.value);
     }
     if (ast.type === "list") {
         return {
@@ -135,18 +137,75 @@ var quasiquote = function (ast) {
         ]
     };
 };
+var isMacroCall = function (ast, env) {
+    if (isPair(ast)) {
+        if (ast.value[0].type == "symbol") {
+            try {
+                var value = env.get(ast.value[0].value);
+                return value.type === "function" && value.is_macro === true;
+            }
+            catch (e) {
+                return false;
+            }
+        }
+    }
+    return false;
+};
+var macroexpand = function (ast, env) {
+    var _a;
+    while (isMacroCall(ast, env)) {
+        if (ast.value[0].type !== "symbol") {
+            throw new Error("Should be a symbol");
+        }
+        var new_ast = env.get(ast.value[0].value);
+        if (new_ast.type !== "function" || !new_ast.value.params) {
+            throw new Error("Should be a custom func");
+        }
+        ast = (_a = new_ast.value).fn.apply(_a, ast.value.slice(1));
+    }
+    return ast;
+};
 var EVAL = function (ast, env) {
-    var i = 0;
     var _loop_1 = function () {
         var _a;
+        ast = macroexpand(ast, env);
         if (ast.type !== "list") {
             return { value: eval_ast(ast, env) };
         }
         if (ast.value.length === 0) {
             return { value: ast };
         }
+        if (ast.value[0].value === "try*") {
+            try {
+                return { value: EVAL(ast.value[1], env) };
+            }
+            catch (e) {
+                if (ast.value.length < 3) {
+                    throw e;
+                }
+                if (ast.value[2].type !== "list") {
+                    throw new Error("should be a list");
+                }
+                var _b = ast.value[2].value, errorName = _b[1], content = _b[2];
+                if (errorName.type !== "symbol") {
+                    throw new Error("should be a symbol");
+                }
+                var new_env = new env_1.Env(env);
+                if (e instanceof Error) {
+                    e = {
+                        type: "string",
+                        value: e.message
+                    };
+                }
+                new_env.set(errorName.value, e);
+                return { value: EVAL(content, new_env) };
+            }
+        }
         if (ast.value[0].value === "quote") {
             return { value: ast.value[1] };
+        }
+        if (ast.value[0].value === "macroexpand") {
+            return { value: macroexpand(ast.value[1], env) };
         }
         if (ast.value[0].value === "quasiquote") {
             ast = quasiquote(ast.value[1]);
@@ -162,6 +221,17 @@ var EVAL = function (ast, env) {
             }
             return { value: evaluated_1 };
         }
+        if (ast.value[0].value === "defmacro!") {
+            if (ast.value[1].type !== "symbol") {
+                throw new Error("Should be a symbol");
+            }
+            var evaluated_2 = EVAL(ast.value[2], env);
+            if (evaluated_2.type !== "function") {
+                throw new Error("should be a func");
+            }
+            env.set(ast.value[1].value, __assign(__assign({}, evaluated_2), { is_macro: true }));
+            return { value: evaluated_2 };
+        }
         if (ast.value[0].value === "let*") {
             var new_env = new env_1.Env(env);
             if (ast.value[1].type !== "list" && ast.value[1].type !== "vector") {
@@ -171,22 +241,22 @@ var EVAL = function (ast, env) {
             if (bindings.length % 2 !== 0) {
                 throw new Error("Bindings should not be odd length");
             }
-            var i_1 = 0;
-            while (i_1 < bindings.length) {
-                if (bindings[i_1].type !== "symbol") {
+            var i = 0;
+            while (i < bindings.length) {
+                if (bindings[i].type !== "symbol") {
                     throw new Error("Bindings should be a symbol");
                 }
                 else {
-                    new_env.set(bindings[i_1].value, EVAL(bindings[i_1 + 1], new_env));
+                    new_env.set(bindings[i].value, EVAL(bindings[i + 1], new_env));
                 }
-                i_1 += 2;
+                i += 2;
             }
             ast = ast.value[2];
             env = new_env;
             return "continue";
         }
         if (ast.value[0].value === "do") {
-            var evaluated_2 = ast.value.slice(1, -1).map(function (val) { return EVAL(val, env); });
+            ast.value.slice(1, -1).map(function (val) { return EVAL(val, env); });
             ast = ast.value[ast.value.length - 1];
             return "continue";
         }
@@ -209,10 +279,7 @@ var EVAL = function (ast, env) {
             var bindings_1 = ast.value[1];
             var content_1 = ast.value[2];
             if (bindings_1.type !== "list" && bindings_1.type !== "vector") {
-                return { value: {
-                        type: "error",
-                        value: "Function bindings should be a list"
-                    } };
+                throw new Error("Function bindings should be a list");
             }
             return { value: {
                     type: "function",
@@ -225,67 +292,57 @@ var EVAL = function (ast, env) {
                             for (var _i = 0; _i < arguments.length; _i++) {
                                 args[_i] = arguments[_i];
                             }
-                            try {
-                                var new_env = new env_1.Env(env);
-                                for (var i_2 = 0; i_2 < args.length; i_2++) {
-                                    if (bindings_1.value[i_2].type !== "symbol") {
-                                        return {
-                                            type: "error",
-                                            value: "Function bindings should all be args"
-                                        };
-                                    }
-                                    new_env.set(bindings_1.value[i_2].value, args[i_2]);
+                            var new_env = new env_1.Env(env);
+                            for (var i = 0; i < bindings_1.value.length; i++) {
+                                if (bindings_1.value[i].type !== "symbol") {
+                                    throw new Error("Function bindings should be a list");
                                 }
-                                return EVAL(content_1, new_env);
+                                // variadic arguments
+                                if (bindings_1.value[i].value === "&") {
+                                    new_env.set(bindings_1.value[i + 1].value, {
+                                        type: "list",
+                                        value: args.slice(i)
+                                    });
+                                    break;
+                                }
+                                else {
+                                    new_env.set(bindings_1.value[i].value, args[i]);
+                                }
                             }
-                            catch (e) {
-                                return {
-                                    type: "error",
-                                    value: "Unexpected error"
-                                };
-                            }
+                            return EVAL(content_1, new_env);
                         }
                     }
                 } };
         }
         var evaluated = eval_ast(ast, env);
         if (evaluated.type !== "list") {
-            return { value: {
-                    type: "error",
-                    value: "Should be a function"
-                } };
+            throw new Error("Should be a list");
         }
         if (evaluated.value[0].type === "error") {
             return { value: evaluated.value[0] };
         }
         if (evaluated.value[0].type !== "function") {
-            return { value: {
-                    type: "error",
-                    value: "Should be a function"
-                } };
+            throw new Error("Should be a function");
         }
         var fnValue = evaluated.value[0].value;
         if (fnValue.params) {
             var args_1 = evaluated.value.slice(1);
             ast = fnValue.ast;
             var new_env = new env_1.Env(fnValue.env);
-            for (var i_3 = 0; i_3 < fnValue.params.value.length; i_3++) {
-                if (fnValue.params.value[i_3].type !== "symbol") {
-                    return { value: {
-                            type: "error",
-                            value: "Function bindings should all be args"
-                        } };
+            for (var i = 0; i < fnValue.params.value.length; i++) {
+                if (fnValue.params.value[i].type !== "symbol") {
+                    throw new Error("Function bindings should all be args");
                 }
                 // variadic arguments
-                if (fnValue.params.value[i_3].value === "&") {
-                    new_env.set(fnValue.params.value[i_3 + 1].value, {
+                if (fnValue.params.value[i].value === "&") {
+                    new_env.set(fnValue.params.value[i + 1].value, {
                         type: "list",
-                        value: args_1.slice(i_3)
+                        value: args_1.slice(i)
                     });
                     break;
                 }
                 else {
-                    new_env.set(fnValue.params.value[i_3].value, args_1[i_3]);
+                    new_env.set(fnValue.params.value[i].value, args_1[i]);
                 }
             }
             env = new_env;
@@ -299,9 +356,23 @@ var EVAL = function (ast, env) {
             return state_1.value;
     }
 };
-var rep = function (input) { return printer_1.pr_str(EVAL(reader_1.read_str(input), repl_env)); };
+var rep = function (input) {
+    try {
+        return printer_1.pr_str(EVAL(reader_1.read_str(input, true), repl_env));
+    }
+    catch (e) {
+        if (e instanceof Error) {
+            return printer_1.pr_str({
+                type: "string",
+                value: ".*Error.*" + e.message
+            }, false);
+        }
+        return ".*Error.*" + printer_1.pr_str(e);
+    }
+};
 rep("(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\\nnil)\")))))");
 rep("(def! not (fn* (a) (if a false true)))");
+rep("(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))");
 var filenameIndex = process.argv.indexOf(__filename);
 var args = process.argv.slice(filenameIndex + 1);
 repl_env.set("*ARGV*", {
@@ -322,12 +393,12 @@ if (args.length >= 1) {
 }
 else {
     process.stdout.write("user> ");
-    var rl = readline.createInterface({
+    var rl_1 = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
         terminal: true
     });
-    rl.on("line", function (line) {
+    rl_1.on("line", function (line) {
         console.log(rep(line));
         process.stdout.write("user> ");
     });

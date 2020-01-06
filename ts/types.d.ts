@@ -27,6 +27,7 @@ type Fun = CustomFun | RegularFun;
 
 type CustomFun = {
   type: "function";
+  is_macro?: boolean;
   value: {
     ast: Data;
     params: List | Vector;
@@ -37,6 +38,7 @@ type CustomFun = {
 
 type RegularFun = {
   type: "function";
+  is_macro?: boolean;
   value: {
     params?: never;
     fn: (...args: any[]) => Data;
@@ -45,7 +47,7 @@ type RegularFun = {
 
 type Err = {
   type: "error";
-  value: string;
+  value: Data;
 };
 
 type Keyword = {

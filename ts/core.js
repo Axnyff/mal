@@ -18,7 +18,7 @@ var prn = function () {
     for (var _i = 0; _i < arguments.length; _i++) {
         args[_i] = arguments[_i];
     }
-    console.log(args.map(function (arg) { return printer_1.pr_str(arg, true); }).join(' '));
+    console.log(args.map(function (arg) { return printer_1.pr_str(arg, true); }).join(" "));
     return {
         type: "nil"
     };
@@ -33,18 +33,12 @@ var list = function () {
         value: args
     };
 };
-var is_list = function (arg) {
-    return {
-        type: "bool",
-        value: arg.type === "list"
-    };
-};
-var is_empty = function (arg) {
-    return {
-        type: "bool",
-        value: count(arg).value === 0
-    };
-};
+var toBool = function (v) { return ({
+    type: "bool",
+    value: v
+}); };
+var is_list = function (arg) { return toBool(arg.type === "list"); };
+var is_empty = function (arg) { return toBool(count(arg).value === 0); };
 var count = function (arg) {
     if (arg.type === "nil") {
         return {
@@ -53,10 +47,7 @@ var count = function (arg) {
         };
     }
     if (arg.type !== "list" && arg.type !== "vector") {
-        return {
-            type: "error",
-            value: "empty? should be called on a list"
-        };
+        throw new Error("count? should be called on a list");
     }
     return {
         type: "number",
@@ -100,18 +91,10 @@ var _equal = function (a, b) {
     }
     return a.value === b.value;
 };
-var equal = function (a, b) {
-    return {
-        type: "bool",
-        value: _equal(a, b)
-    };
-};
+var equal = function (a, b) { return toBool(_equal(a, b)); };
 var buildCompFn = function (fn) { return function (arg1, arg2) {
     if (arg1.type !== "number" || arg2.type !== "number") {
-        return {
-            type: "error",
-            value: "numeric function called with non numbers"
-        };
+        throw new Error("numeric function called with non numbers");
     }
     return {
         type: "bool",
@@ -161,6 +144,168 @@ var concat = function () {
         }, [])
     });
 };
+var nth = function (lst, index) {
+    if (index.value >= lst.value.length) {
+        throw new Error(".*Invalid range.*");
+    }
+    return lst.value[index.value];
+};
+var first = function (lst) {
+    if (lst.type === "nil" || lst.value.length === 0) {
+        return {
+            type: "nil"
+        };
+    }
+    return lst.value[0];
+};
+var rest = function (lst) {
+    if (lst.type === "nil" || lst.value.length === 0) {
+        return {
+            type: "list",
+            value: []
+        };
+    }
+    return { type: "list", value: lst.value.slice(1) };
+};
+var apply = function (f) {
+    var _a;
+    var args = [];
+    for (var _i = 1; _i < arguments.length; _i++) {
+        args[_i - 1] = arguments[_i];
+    }
+    var lastArg = args[args.length - 1];
+    if (!isSeq(lastArg)) {
+        throw new Error("");
+    }
+    var actualArgs = __spreadArrays(args.slice(0, -1), lastArg.value);
+    return (_a = f.value).fn.apply(_a, actualArgs);
+};
+var map = function (f, col) {
+    return {
+        type: "list",
+        value: col.value.map(f.value.fn)
+    };
+};
+var is_nil = function (ast) { return toBool(ast.type === "nil"); };
+var is_true = function (ast) { return toBool(ast.value === true); };
+var is_false = function (ast) { return toBool(ast.value === false); };
+var is_symbol = function (ast) { return toBool(ast.type === "symbol"); };
+var symbol = function (ast) { return ({
+    type: "symbol",
+    value: ast.value
+}); };
+var keyword = function (ast) {
+    return ast.type === "keyword"
+        ? ast
+        : {
+            type: "keyword",
+            value: "\u029E:" + ast.value
+        };
+};
+var is_keyword = function (ast) { return toBool(ast.type === "keyword"); };
+var vector = function () {
+    var args = [];
+    for (var _i = 0; _i < arguments.length; _i++) {
+        args[_i] = arguments[_i];
+    }
+    return ({
+        type: "vector",
+        value: args
+    });
+};
+var is_vector = function (ast) { return toBool(ast.type === "vector"); };
+var hashmap = function () {
+    var args = [];
+    for (var _i = 0; _i < arguments.length; _i++) {
+        args[_i] = arguments[_i];
+    }
+    var content = {};
+    var i = 0;
+    while (i < args.length) {
+        var key = args[i];
+        var value = args[i + 1];
+        if (key.type !== "string" && key.type !== "keyword") {
+            throw new Error("wrong key for map");
+        }
+        content[key.value] = value;
+        i += 2;
+    }
+    return {
+        type: "map",
+        value: content
+    };
+};
+var is_map = function (arg) { return toBool(arg.type === "map"); };
+var assoc = function (map) {
+    var keyValues = [];
+    for (var _i = 1; _i < arguments.length; _i++) {
+        keyValues[_i - 1] = arguments[_i];
+    }
+    var existingKeyValues = Object.entries(map.value).reduce(function (acc, _a) {
+        var key = _a[0], value = _a[1];
+        return __spreadArrays(acc, [
+            {
+                type: key.startsWith("\u029E") ? "keyword" : "string",
+                value: key
+            },
+            value
+        ]);
+    }, []);
+    return hashmap.apply(void 0, __spreadArrays(existingKeyValues, keyValues));
+};
+var dissoc = function (map) {
+    var keyToRemove = [];
+    for (var _i = 1; _i < arguments.length; _i++) {
+        keyToRemove[_i - 1] = arguments[_i];
+    }
+    var remainingKeyValues = Object.entries(map.value).reduce(function (acc, _a) {
+        var key = _a[0], value = _a[1];
+        if (keyToRemove.some(function (_a) {
+            var value = _a.value;
+            return value === key;
+        })) {
+            return acc;
+        }
+        return __spreadArrays(acc, [
+            {
+                type: key.startsWith("\u029E") ? "keyword" : "string",
+                value: key
+            },
+            value
+        ]);
+    }, []);
+    return hashmap.apply(void 0, remainingKeyValues);
+};
+var get = function (map, key) {
+    if (map.type === 'nil') {
+        return {
+            type: 'nil',
+        };
+    }
+    var keyAndValue = Object.entries(map.value).find(function (_a) {
+        var k = _a[0];
+        return k === key.value;
+    });
+    return keyAndValue
+        ? keyAndValue[1]
+        : {
+            type: "nil"
+        };
+};
+var contains = function (map, key) {
+    return toBool(Object.keys(map.value).includes(key.value));
+};
+var keys = function (map) { return ({
+    type: "list",
+    value: Object.keys(map.value).map(function (key) { return ({
+        type: key.startsWith("\u029E") ? "keyword" : "string",
+        value: key
+    }); })
+}); };
+var vals = function (map) { return ({
+    type: "list",
+    value: Object.values(map.value)
+}); };
 exports.ns = {
     prn: {
         type: "function",
@@ -249,7 +394,7 @@ exports.ns = {
     },
     "read-string": {
         type: "function",
-        value: { fn: function (a) { return reader_1.read_str(a.value); } }
+        value: { fn: function (a) { return reader_1.read_str(a.value, true); } }
     },
     slurp: {
         type: "function",
@@ -259,14 +404,11 @@ exports.ns = {
                     var content = fs_1.default.readFileSync(filename.value);
                     return {
                         type: "string",
-                        value: content.toString(),
+                        value: content.toString()
                     };
                 }
                 catch (err) {
-                    return {
-                        type: "error",
-                        value: "File " + filename.value + " not found"
-                    };
+                    throw new Error("File " + filename.value + " not found");
                 }
             }
         }
@@ -298,5 +440,133 @@ exports.ns = {
     concat: {
         type: "function",
         value: { fn: concat }
+    },
+    nth: {
+        type: "function",
+        value: { fn: nth }
+    },
+    first: {
+        type: "function",
+        value: { fn: first }
+    },
+    rest: {
+        type: "function",
+        value: { fn: rest }
+    },
+    apply: {
+        type: "function",
+        value: { fn: apply }
+    },
+    map: {
+        type: "function",
+        value: { fn: map }
+    },
+    "nil?": {
+        type: "function",
+        value: { fn: is_nil }
+    },
+    "true?": {
+        type: "function",
+        value: { fn: is_true }
+    },
+    "false?": {
+        type: "function",
+        value: { fn: is_false }
+    },
+    "symbol?": {
+        type: "function",
+        value: { fn: is_symbol }
+    },
+    throw: {
+        type: "function",
+        value: {
+            fn: function (ast) {
+                throw ast;
+            }
+        }
+    },
+    symbol: {
+        type: "function",
+        value: {
+            fn: symbol
+        }
+    },
+    keyword: {
+        type: "function",
+        value: {
+            fn: keyword
+        }
+    },
+    "keyword?": {
+        type: "function",
+        value: {
+            fn: is_keyword
+        }
+    },
+    vector: {
+        type: "function",
+        value: {
+            fn: vector
+        }
+    },
+    "vector?": {
+        type: "function",
+        value: {
+            fn: is_vector
+        }
+    },
+    "sequential?": {
+        type: "function",
+        value: {
+            fn: function (a) { return toBool(isSeq(a)); }
+        }
+    },
+    "hash-map": {
+        type: "function",
+        value: {
+            fn: hashmap
+        }
+    },
+    "map?": {
+        type: "function",
+        value: {
+            fn: is_map
+        }
+    },
+    assoc: {
+        type: "function",
+        value: {
+            fn: assoc
+        }
+    },
+    dissoc: {
+        type: "function",
+        value: {
+            fn: dissoc
+        }
+    },
+    get: {
+        type: "function",
+        value: {
+            fn: get
+        }
+    },
+    "contains?": {
+        type: "function",
+        value: {
+            fn: contains
+        }
+    },
+    keys: {
+        type: "function",
+        value: {
+            fn: keys
+        }
+    },
+    vals: {
+        type: "function",
+        value: {
+            fn: vals
+        }
     }
 };

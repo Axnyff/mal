@@ -158,6 +158,7 @@ const macroexpand = (ast: Data, env: Env): Data => {
 };
 
 const EVAL = (ast: Data, env: Env): Data => {
+  let i = 0;
   while (true) {
     ast = macroexpand(ast, env);
 
@@ -172,9 +173,6 @@ const EVAL = (ast: Data, env: Env): Data => {
       try {
         return EVAL(ast.value[1], env);
       } catch (e) {
-        if (ast.value.length < 3) {
-          throw e;
-        }
         if (ast.value[2].type !== "list") {
           throw new Error("should be a list");
         }
@@ -183,13 +181,7 @@ const EVAL = (ast: Data, env: Env): Data => {
           throw new Error("should be a symbol");
         }
         const new_env = new Env(env);
-        if (e instanceof Error) {
-          e = {
-            type: "string",
-            value: e.message
-          };
-        }
-        new_env.set(errorName.value, e);
+        new_env.set(errorName.value, { type: "error", value: e.message });
         return EVAL(content, new_env);
       }
     }
@@ -254,7 +246,7 @@ const EVAL = (ast: Data, env: Env): Data => {
     }
 
     if (ast.value[0].value === "do") {
-      ast.value.slice(1, -1).map(val => EVAL(val, env));
+      const evaluated = ast.value.slice(1, -1).map(val => EVAL(val, env));
       ast = ast.value[ast.value.length - 1];
       continue;
     }
@@ -286,23 +278,30 @@ const EVAL = (ast: Data, env: Env): Data => {
           ast: content,
           env: env,
           fn: (...args: Data[]) => {
-            const new_env = new Env(env);
-            for (let i = 0; i < bindings.value.length; i++) {
-              if (bindings.value[i].type !== "symbol") {
-                throw new Error("Function bindings should be a list");
+            try {
+              const new_env = new Env(env);
+              for (let i = 0; i < bindings.value.length; i++) {
+                if (bindings.value[i].type !== "symbol") {
+                  throw new Error("Function bindings should be a list");
+                }
+                // variadic arguments
+                if (bindings.value[i].value === "&") {
+                  new_env.set(bindings.value[i + 1].value as string, {
+                    type: "list",
+                    value: args.slice(i)
+                  });
+                  break;
+                } else {
+                  new_env.set(bindings.value[i].value as string, args[i]);
+                }
               }
-              // variadic arguments
-              if (bindings.value[i].value === "&") {
-                new_env.set(bindings.value[i + 1].value as string, {
-                  type: "list",
-                  value: args.slice(i)
-                });
-                break;
-              } else {
-                new_env.set(bindings.value[i].value as string, args[i]);
-              }
+              return EVAL(content, new_env);
+            } catch (e) {
+              return {
+                type: "error",
+                value: "Unexpected error"
+              };
             }
-            return EVAL(content, new_env);
           }
         }
       };
@@ -347,18 +346,15 @@ const EVAL = (ast: Data, env: Env): Data => {
 
 const rep = (input: string): string => {
   try {
-    return pr_str(EVAL(read_str(input, true), repl_env));
+    return pr_str(EVAL(read_str(input), repl_env));
   } catch (e) {
-    if (e instanceof Error) {
-      return pr_str(
-        {
-          type: "string",
-          value: `.*Error.*${e.message}`
-        },
-        false
-      );
-    }
-    return `.*Error.*${pr_str(e)}`;
+    return pr_str(
+      {
+        type: "string",
+        value: `.*Error.*${e.message}`
+      },
+      false
+    );
   }
 };
 

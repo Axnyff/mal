@@ -30,7 +30,7 @@ const tokenize = (input: string) => {
   return tokens;
 };
 
-const read_form = (reader: Reader): Data => {
+const read_form = (reader: Reader, expand: boolean): Data => {
   let token = reader.peek();
   if (!token) {
     return {
@@ -47,101 +47,112 @@ const read_form = (reader: Reader): Data => {
     }
   }
   switch (token) {
-    case ";":
     case "@":
-      reader.next();
-      return {
-        type: "list",
-        value: [
-          {
-            type: "symbol",
-            value: "deref"
-          },
-          read_form(reader)
-        ]
-      };
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "deref"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
     case "'":
-      reader.next();
-      return {
-        type: "list",
-        value: [
-          {
-            type: "symbol",
-            value: "quote"
-          },
-          read_form(reader)
-        ]
-      };
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "quote"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
     case "`":
-      reader.next();
-      return {
-        type: "list",
-        value: [
-          {
-            type: "symbol",
-            value: "quasiquote"
-          },
-          read_form(reader)
-        ]
-      };
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "quasiquote"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
     case "^":
-      reader.next();
-      const meta = read_form(reader);
-      const content = read_form(reader);
-      return {
-        type: "list",
-        value: [
-          {
-            type: "symbol",
-            value: "with-meta"
-          },
-          content,
-          meta
-        ]
-      };
+      if (expand) {
+        reader.next();
+        const meta = read_form(reader, expand);
+        const content = read_form(reader, expand);
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "with-meta"
+            },
+            content,
+            meta
+          ]
+        };
+      }
     case "~":
-      reader.next();
-      return {
-        type: "list",
-        value: [
-          {
-            type: "symbol",
-            value: "unquote"
-          },
-          read_form(reader)
-        ]
-      };
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "unquote"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
     case "~@":
-      reader.next();
-      return {
-        type: "list",
-        value: [
-          {
-            type: "symbol",
-            value: "splice-unquote"
-          },
-          read_form(reader)
-        ]
-      };
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "splice-unquote"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
     case "(":
-      return read_list(reader);
+      return read_list(reader, expand);
 
     case "[":
-      return read_vector(reader);
+      return read_vector(reader, expand);
 
     case "{":
-      return read_map(reader);
+      return read_map(reader, expand);
 
     default:
       return read_atom(reader);
   }
 };
 
-const read_list = (reader: Reader): List => {
+const read_list = (reader: Reader, expand: boolean): List => {
   const list_content = [];
   reader.next();
   while (reader.peek()[0] !== ")") {
-    const form = read_form(reader);
+    const form = read_form(reader, expand);
     list_content.push(form);
   }
   reader.next();
@@ -151,11 +162,11 @@ const read_list = (reader: Reader): List => {
   };
 };
 
-const read_vector = (reader: Reader): Vector => {
+const read_vector = (reader: Reader, expand: boolean): Vector => {
   const vector_content = [];
   reader.next();
   while (reader.peek()[0] !== "]") {
-    const form = read_form(reader);
+    const form = read_form(reader, expand);
     vector_content.push(form);
   }
   reader.next();
@@ -165,18 +176,15 @@ const read_vector = (reader: Reader): Vector => {
   };
 };
 
-const read_map = (reader: Reader): HashMap | Err => {
+const read_map = (reader: Reader, expand: boolean): HashMap | Err => {
   const map_content: HashMap["value"] = {};
   reader.next();
   while (reader.peek()[0] !== "}") {
-    const key = read_form(reader);
+    const key = read_form(reader, expand);
     if (key.type !== "string" && key.type !== "keyword") {
-      return {
-        type: "error",
-        value: "wrong key for maop"
-      };
+      throw new Error(".*(Wrong key for map).*");
     }
-    const value = read_form(reader);
+    const value = read_form(reader, expand);
     map_content[key.value] = value;
   }
   reader.next();
@@ -208,10 +216,7 @@ const read_atom = (reader: Reader): Primitive => {
   if (token[0] == '"') {
     const valid = token.match(/^"(\\[n"\\]|[^\\"])*"$/);
     if (!valid) {
-      return {
-        type: "error",
-        value: ".*(EOF|end of input|unbalanced).*"
-      };
+      throw new Error(".*(EOF|end of input|unbalanced).*");
     }
 
     const value = token.slice(1, -1).replace(/\\([\\n"])/g, match => {
@@ -240,15 +245,12 @@ const read_atom = (reader: Reader): Primitive => {
   };
 };
 
-export const read_str = (input: string): Data => {
+export const read_str = (input: string, expand: boolean = false): Data => {
   const tokens = tokenize(input);
   const reader = new Reader(tokens);
   try {
-    return read_form(reader);
+    return read_form(reader, expand);
   } catch (e) {
-    return {
-      type: "error",
-      value: ".*(EOF|end of input|unbalanced).*"
-    };
+    throw new Error(".*(EOF|end of input|unbalanced).*");
   }
 };

@@ -26,7 +26,10 @@ export const pr_str = (
     return data.value.toString();
   }
 
-  if (data.type === "symbol" || data.type === "error") {
+  if (data.type === 'error') {
+    return pr_str(data.value);
+  }
+  if (data.type === "symbol") {
     return data.value;
   }
 

@@ -21,7 +21,10 @@ exports.pr_str = function (data, print_readability) {
     if (data.type === "number") {
         return data.value.toString();
     }
-    if (data.type === "symbol" || data.type === "error") {
+    if (data.type === 'error') {
+        return exports.pr_str(data.value);
+    }
+    if (data.type === "symbol") {
         return data.value;
     }
     if (data.type === "nil") {

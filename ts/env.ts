@@ -19,7 +19,7 @@ export class Env {
     if (this.outer !== null) {
       return this.outer.find(key);
     }
-    throw new Error("not found : " + key);
+    throw new Error(`'${key}' not found`);
   }
 
   get(key: string) {

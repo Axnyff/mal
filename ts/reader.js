@@ -26,7 +26,7 @@ var tokenize = function (input) {
     }
     return tokens;
 };
-var read_form = function (reader) {
+var read_form = function (reader, expand) {
     var token = reader.peek();
     if (!token) {
         return {
@@ -43,97 +43,108 @@ var read_form = function (reader) {
         }
     }
     switch (token) {
-        case ";":
         case "@":
-            reader.next();
-            return {
-                type: "list",
-                value: [
-                    {
-                        type: "symbol",
-                        value: "deref"
-                    },
-                    read_form(reader)
-                ]
-            };
+            if (expand) {
+                reader.next();
+                return {
+                    type: "list",
+                    value: [
+                        {
+                            type: "symbol",
+                            value: "deref"
+                        },
+                        read_form(reader, expand)
+                    ]
+                };
+            }
         case "'":
-            reader.next();
-            return {
-                type: "list",
-                value: [
-                    {
-                        type: "symbol",
-                        value: "quote"
-                    },
-                    read_form(reader)
-                ]
-            };
+            if (expand) {
+                reader.next();
+                return {
+                    type: "list",
+                    value: [
+                        {
+                            type: "symbol",
+                            value: "quote"
+                        },
+                        read_form(reader, expand)
+                    ]
+                };
+            }
         case "`":
-            reader.next();
-            return {
-                type: "list",
-                value: [
-                    {
-                        type: "symbol",
-                        value: "quasiquote"
-                    },
-                    read_form(reader)
-                ]
-            };
+            if (expand) {
+                reader.next();
+                return {
+                    type: "list",
+                    value: [
+                        {
+                            type: "symbol",
+                            value: "quasiquote"
+                        },
+                        read_form(reader, expand)
+                    ]
+                };
+            }
         case "^":
-            reader.next();
-            var meta = read_form(reader);
-            var content = read_form(reader);
-            return {
-                type: "list",
-                value: [
-                    {
-                        type: "symbol",
-                        value: "with-meta"
-                    },
-                    content,
-                    meta
-                ]
-            };
+            if (expand) {
+                reader.next();
+                var meta = read_form(reader, expand);
+                var content = read_form(reader, expand);
+                return {
+                    type: "list",
+                    value: [
+                        {
+                            type: "symbol",
+                            value: "with-meta"
+                        },
+                        content,
+                        meta
+                    ]
+                };
+            }
         case "~":
-            reader.next();
-            return {
-                type: "list",
-                value: [
-                    {
-                        type: "symbol",
-                        value: "unquote"
-                    },
-                    read_form(reader)
-                ]
-            };
+            if (expand) {
+                reader.next();
+                return {
+                    type: "list",
+                    value: [
+                        {
+                            type: "symbol",
+                            value: "unquote"
+                        },
+                        read_form(reader, expand)
+                    ]
+                };
+            }
         case "~@":
-            reader.next();
-            return {
-                type: "list",
-                value: [
-                    {
-                        type: "symbol",
-                        value: "splice-unquote"
-                    },
-                    read_form(reader)
-                ]
-            };
+            if (expand) {
+                reader.next();
+                return {
+                    type: "list",
+                    value: [
+                        {
+                            type: "symbol",
+                            value: "splice-unquote"
+                        },
+                        read_form(reader, expand)
+                    ]
+                };
+            }
         case "(":
-            return read_list(reader);
+            return read_list(reader, expand);
         case "[":
-            return read_vector(reader);
+            return read_vector(reader, expand);
         case "{":
-            return read_map(reader);
+            return read_map(reader, expand);
         default:
             return read_atom(reader);
     }
 };
-var read_list = function (reader) {
+var read_list = function (reader, expand) {
     var list_content = [];
     reader.next();
     while (reader.peek()[0] !== ")") {
-        var form = read_form(reader);
+        var form = read_form(reader, expand);
         list_content.push(form);
     }
     reader.next();
@@ -142,11 +153,11 @@ var read_list = function (reader) {
         value: list_content
     };
 };
-var read_vector = function (reader) {
+var read_vector = function (reader, expand) {
     var vector_content = [];
     reader.next();
     while (reader.peek()[0] !== "]") {
-        var form = read_form(reader);
+        var form = read_form(reader, expand);
         vector_content.push(form);
     }
     reader.next();
@@ -155,18 +166,15 @@ var read_vector = function (reader) {
         value: vector_content
     };
 };
-var read_map = function (reader) {
+var read_map = function (reader, expand) {
     var map_content = {};
     reader.next();
     while (reader.peek()[0] !== "}") {
-        var key = read_form(reader);
+        var key = read_form(reader, expand);
         if (key.type !== "string" && key.type !== "keyword") {
-            return {
-                type: "error",
-                value: "wrong key for maop"
-            };
+            throw new Error(".*(Wrong key for map).*");
         }
-        var value = read_form(reader);
+        var value = read_form(reader, expand);
         map_content[key.value] = value;
     }
     reader.next();
@@ -197,10 +205,7 @@ var read_atom = function (reader) {
     if (token[0] == '"') {
         var valid = token.match(/^"(\\[n"\\]|[^\\"])*"$/);
         if (!valid) {
-            return {
-                type: "error",
-                value: ".*(EOF|end of input|unbalanced).*"
-            };
+            throw new Error(".*(EOF|end of input|unbalanced).*");
         }
         var value = token.slice(1, -1).replace(/\\([\\n"])/g, function (match) {
             if (match === "\\\\") {
@@ -227,16 +232,14 @@ var read_atom = function (reader) {
         value: parseFloat(token)
     };
 };
-exports.read_str = function (input) {
+exports.read_str = function (input, expand) {
+    if (expand === void 0) { expand = false; }
     var tokens = tokenize(input);
     var reader = new Reader(tokens);
     try {
-        return read_form(reader);
+        return read_form(reader, expand);
     }
     catch (e) {
-        return {
-            type: "error",
-            value: ".*(EOF|end of input|unbalanced).*"
-        };
+        throw new Error(".*(EOF|end of input|unbalanced).*");
     }
 };
