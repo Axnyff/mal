@@ -1,15 +1,10 @@
-import { Num, Data, List, HashMap } from "./types";
+import { Num, Data, Seq, HashMap } from "./types";
 import { pr_str } from "./printer";
 import { read_str } from "./reader";
 import { Env } from "./env";
 import { ns } from "./core";
 
 const readline = require("readline");
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-  terminal: true
-});
 
 const repl_env = new Env();
 repl_env.set("+", {
@@ -94,8 +89,8 @@ const eval_ast = (ast: Data, env: Env): Data => {
   return ast;
 };
 
-const isPair = (ast: Data): ast is List =>
-  ast.type === "list" && ast.value.length !== 0;
+const isPair = (ast: Data): ast is Seq =>
+  (ast.type === "vector" || ast.type === "list") && ast.value.length !== 0;
 
 const quasiquote = (ast: Data): Data => {
   if (!isPair(ast)) {
@@ -218,7 +213,7 @@ const EVAL = (ast: Data, env: Env): Data => {
     if (ast.value[0].value === "fn*") {
       const bindings = ast.value[1];
       const content = ast.value[2];
-      if (bindings.type !== "list" && bindings.type !== 'vector') {
+      if (bindings.type !== "list" && bindings.type !== "vector") {
         return {
           type: "error",
           value: "Function bindings should be a list"
@@ -300,18 +295,40 @@ const EVAL = (ast: Data, env: Env): Data => {
   }
 };
 
-const rep = (input: string) =>
-  console.log(pr_str(EVAL(read_str(input), repl_env)));
+const rep = (input: string): string => pr_str(EVAL(read_str(input), repl_env));
 
 rep(
   `(def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\\nnil)")))))`
 );
 rep(`(def! not (fn* (a) (if a false true)))`);
 
-process.stdout.write("user> ");
-rl.on("line", (line: string) => {
-  rep(line);
-  process.stdout.write("user> ");
-});
+const filenameIndex = process.argv.indexOf(__filename);
+const args = process.argv.slice(filenameIndex + 1);
 
-export = {};
+repl_env.set("*ARGV*", {
+  type: "list",
+  value: []
+});
+if (args.length >= 1) {
+  if (args.length > 1) {
+    repl_env.set("*ARGV*", {
+      type: "list",
+      value: args.slice(1).map(item => ({
+        type: "string",
+        value: item
+      }))
+    });
+  }
+  rep(`(load-file "${args[0]}")`);
+} else {
+  process.stdout.write("user> ");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true
+  });
+  rl.on("line", (line: string) => {
+    console.log(rep(line));
+    process.stdout.write("user> ");
+  });
+}

@@ -13,7 +13,7 @@ exports.pr_str = function (data, print_readability) {
     }
     if (data.type === "string") {
         if (print_readability) {
-            var str = data.value.replace(/\\/g, "\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+            var str = data.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
             return "\"" + str + "\"";
         }
         return data.value;

@@ -1,4 +1,5 @@
 import { Data } from "./types";
+
 export const pr_str = (
   data: Data,
   print_readability: boolean = true
@@ -15,7 +16,7 @@ export const pr_str = (
 
   if (data.type === "string") {
     if (print_readability) {
-      const str = data.value.replace(/\\/g, "\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+      const str = data.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
       return `"${str}"`;
     }
     return data.value;

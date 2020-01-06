@@ -28,7 +28,22 @@ var tokenize = function (input) {
 };
 var read_form = function (reader) {
     var token = reader.peek();
+    if (!token) {
+        return {
+            type: "nil"
+        };
+    }
+    while (token.startsWith(";")) {
+        reader.next();
+        token = reader.peek();
+        if (!token) {
+            return {
+                type: "nil"
+            };
+        }
+    }
     switch (token) {
+        case ";":
         case "@":
             reader.next();
             return {
@@ -187,9 +202,18 @@ var read_atom = function (reader) {
                 value: ".*(EOF|end of input|unbalanced).*"
             };
         }
+        var value = token.slice(1, -1).replace(/\\([\\n"])/g, function (match) {
+            if (match === "\\\\") {
+                return "\\";
+            }
+            if (match === '\\"') {
+                return '"';
+            }
+            return "\n";
+        });
         return {
             type: "string",
-            value: token.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, "\n"),
+            value: value
         };
     }
     if (Number.isNaN(parseFloat(token))) {

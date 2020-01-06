@@ -1,15 +1,10 @@
-import { Num, Data } from "./types";
+import { Num, Data, List, HashMap } from "./types";
 import { pr_str } from "./printer";
 import { read_str } from "./reader";
 import { Env } from "./env";
 import { ns } from "./core";
 
 const readline = require("readline");
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-  terminal: true
-});
 
 const repl_env = new Env();
 repl_env.set("+", {
@@ -76,10 +71,74 @@ const eval_ast = (ast: Data, env: Env): Data => {
       value: ast.value.map(val => EVAL(val, env))
     };
   }
+  if (ast.type === "vector") {
+    return {
+      type: "vector",
+      value: ast.value.map(val => EVAL(val, env))
+    };
+  }
+  if (ast.type === "map") {
+    return {
+      type: "map",
+      value: Object.entries(ast.value).reduce((acc, [key, val]) => {
+        acc[key] = EVAL(val, env);
+        return acc;
+      }, {} as HashMap["value"])
+    };
+  }
   return ast;
 };
 
+const isPair = (ast: Data): ast is List =>
+  ast.type === "list" && ast.value.length !== 0;
+
+const quasiquote = (ast: Data): Data => {
+  if (!isPair(ast)) {
+    return {
+      type: "list",
+      value: [
+        {
+          type: "symbol",
+          value: "quote"
+        },
+        ast
+      ]
+    };
+  }
+  if (ast.value[0].value === "unquote") {
+    return ast.value[1];
+  }
+
+  if (isPair(ast.value[0])) {
+    if (ast.value[0].value[0].value === "splice-unquote") {
+      return {
+        type: "list",
+        value: [
+          {
+            type: "symbol",
+            value: "concat"
+          },
+          ast.value[0].value[1],
+          quasiquote({ type: "list", value: ast.value.slice(1) })
+        ]
+      };
+    }
+  }
+  return {
+    type: "list",
+    value: [
+      {
+        type: "symbol",
+        value: "cons"
+      },
+      quasiquote(ast.value[0]),
+      quasiquote({ type: "list", value: ast.value.slice(1) })
+    ]
+  };
+};
+
 const EVAL = (ast: Data, env: Env): Data => {
+  let i = 0;
   while (true) {
     if (ast.type !== "list") {
       return eval_ast(ast, env);
@@ -87,6 +146,14 @@ const EVAL = (ast: Data, env: Env): Data => {
     if (ast.value.length === 0) {
       return ast;
     }
+    if (ast.value[0].value === "quote") {
+      return ast.value[1];
+    }
+    if (ast.value[0].value === "quasiquote") {
+      ast = quasiquote(ast.value[1]);
+      continue;
+    }
+
     if (ast.value[0].value === "def!") {
       if (ast.value[1].type !== "symbol") {
         throw new Error("Should be a symbol");
@@ -99,7 +166,7 @@ const EVAL = (ast: Data, env: Env): Data => {
     }
     if (ast.value[0].value === "let*") {
       const new_env = new Env(env);
-      if (ast.value[1].type !== "list") {
+      if (ast.value[1].type !== "list" && ast.value[1].type !== "vector") {
         throw new Error("Bindings should be a list");
       }
       const bindings = ast.value[1].value;
@@ -146,7 +213,7 @@ const EVAL = (ast: Data, env: Env): Data => {
     if (ast.value[0].value === "fn*") {
       const bindings = ast.value[1];
       const content = ast.value[2];
-      if (bindings.type !== "list") {
+      if (bindings.type !== "list" && bindings.type !== "vector") {
         return {
           type: "error",
           value: "Function bindings should be a list"
@@ -202,15 +269,24 @@ const EVAL = (ast: Data, env: Env): Data => {
     if (fnValue.params) {
       const args = evaluated.value.slice(1);
       ast = fnValue.ast;
-      const new_env = new Env(env);
-      for (let i = 0; i < args.length; i++) {
+      const new_env = new Env(fnValue.env);
+      for (let i = 0; i < fnValue.params.value.length; i++) {
         if (fnValue.params.value[i].type !== "symbol") {
           return {
             type: "error",
             value: "Function bindings should all be args"
           };
         }
-        new_env.set(fnValue.params.value[i].value as string, args[i]);
+        // variadic arguments
+        if (fnValue.params.value[i].value === "&") {
+          new_env.set(fnValue.params.value[i + 1].value as string, {
+            type: "list",
+            value: args.slice(i)
+          });
+          break;
+        } else {
+          new_env.set(fnValue.params.value[i].value as string, args[i]);
+        }
       }
       env = new_env;
       continue;
@@ -219,18 +295,41 @@ const EVAL = (ast: Data, env: Env): Data => {
   }
 };
 
-const rep = (input: string) => pr_str(EVAL(read_str(input), repl_env));
+const rep = (input: string): string =>
+  pr_str(EVAL(read_str(input), repl_env));
 
-console.log(
-  rep(
-    `(def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\\nnil)")))))`
-  )
+rep(
+  `(def! load-file (fn* (f) (eval (read-string (str "(do " (slurp f) "\\nnil)")))))`
 );
+rep(`(def! not (fn* (a) (if a false true)))`);
 
-process.stdout.write("user> ");
-rl.on("line", (line: string) => {
-  console.log(rep(line));
-  process.stdout.write("user> ");
+const filenameIndex = process.argv.indexOf(__filename);
+const args = process.argv.slice(filenameIndex + 1);
+
+repl_env.set("*ARGV*", {
+  type: "list",
+  value: []
 });
-
-export = {};
+if (args.length >= 1) {
+  if (args.length > 1) {
+    repl_env.set("*ARGV*", {
+      type: "list",
+      value: args.slice(1).map(item => ({
+        type: "string",
+        value: item
+      }))
+    });
+  }
+  rep(`(load-file "${args[0]}")`);
+} else {
+  process.stdout.write("user> ");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true
+  });
+  rl.on("line", (line: string) => {
+    console.log(rep(line));
+    process.stdout.write("user> ");
+  });
+}

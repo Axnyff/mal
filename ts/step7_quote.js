@@ -1,14 +1,10 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 var printer_1 = require("./printer");
 var reader_1 = require("./reader");
 var env_1 = require("./env");
 var core_1 = require("./core");
 var readline = require("readline");
-var rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: true
-});
 var repl_env = new env_1.Env();
 repl_env.set("+", {
     type: "function",
@@ -94,7 +90,7 @@ var eval_ast = function (ast, env) {
     return ast;
 };
 var isPair = function (ast) {
-    return ast.type === "list" && ast.value.length !== 0;
+    return (ast.type === "vector" || ast.type === "list") && ast.value.length !== 0;
 };
 var quasiquote = function (ast) {
     if (!isPair(ast)) {
@@ -212,7 +208,7 @@ var EVAL = function (ast, env) {
         if (ast.value[0].value === "fn*") {
             var bindings_1 = ast.value[1];
             var content_1 = ast.value[2];
-            if (bindings_1.type !== "list" && bindings_1.type !== 'vector') {
+            if (bindings_1.type !== "list" && bindings_1.type !== "vector") {
                 return { value: {
                         type: "error",
                         value: "Function bindings should be a list"
@@ -270,7 +266,7 @@ var EVAL = function (ast, env) {
         }
         var fnValue = evaluated.value[0].value;
         if (fnValue.params) {
-            var args = evaluated.value.slice(1);
+            var args_1 = evaluated.value.slice(1);
             ast = fnValue.ast;
             var new_env = new env_1.Env(fnValue.env);
             for (var i_3 = 0; i_3 < fnValue.params.value.length; i_3++) {
@@ -284,12 +280,12 @@ var EVAL = function (ast, env) {
                 if (fnValue.params.value[i_3].value === "&") {
                     new_env.set(fnValue.params.value[i_3 + 1].value, {
                         type: "list",
-                        value: args.slice(i_3)
+                        value: args_1.slice(i_3)
                     });
                     break;
                 }
                 else {
-                    new_env.set(fnValue.params.value[i_3].value, args[i_3]);
+                    new_env.set(fnValue.params.value[i_3].value, args_1[i_3]);
                 }
             }
             env = new_env;
@@ -303,14 +299,36 @@ var EVAL = function (ast, env) {
             return state_1.value;
     }
 };
-var rep = function (input) {
-    return console.log(printer_1.pr_str(EVAL(reader_1.read_str(input), repl_env)));
-};
+var rep = function (input) { return printer_1.pr_str(EVAL(reader_1.read_str(input), repl_env)); };
 rep("(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\\nnil)\")))))");
 rep("(def! not (fn* (a) (if a false true)))");
-process.stdout.write("user> ");
-rl.on("line", function (line) {
-    rep(line);
-    process.stdout.write("user> ");
+var filenameIndex = process.argv.indexOf(__filename);
+var args = process.argv.slice(filenameIndex + 1);
+repl_env.set("*ARGV*", {
+    type: "list",
+    value: []
 });
-module.exports = {};
+if (args.length >= 1) {
+    if (args.length > 1) {
+        repl_env.set("*ARGV*", {
+            type: "list",
+            value: args.slice(1).map(function (item) { return ({
+                type: "string",
+                value: item
+            }); })
+        });
+    }
+    rep("(load-file \"" + args[0] + "\")");
+}
+else {
+    process.stdout.write("user> ");
+    var rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: true
+    });
+    rl.on("line", function (line) {
+        console.log(rep(line));
+        process.stdout.write("user> ");
+    });
+}

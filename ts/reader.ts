@@ -31,8 +31,23 @@ const tokenize = (input: string) => {
 };
 
 const read_form = (reader: Reader): Data => {
-  const token = reader.peek();
+  let token = reader.peek();
+  if (!token) {
+    return {
+      type: "nil"
+    };
+  }
+  while (token.startsWith(";")) {
+    reader.next();
+    token = reader.peek();
+    if (!token) {
+      return {
+        type: "nil"
+      };
+    }
+  }
   switch (token) {
+    case ";":
     case "@":
       reader.next();
       return {
@@ -191,18 +206,26 @@ const read_atom = (reader: Reader): Primitive => {
     };
   }
   if (token[0] == '"') {
-
     const valid = token.match(/^"(\\[n"\\]|[^\\"])*"$/);
-    if (!valid ) {
+    if (!valid) {
       return {
         type: "error",
         value: ".*(EOF|end of input|unbalanced).*"
       };
     }
 
+    const value = token.slice(1, -1).replace(/\\([\\n"])/g, match => {
+      if (match === "\\\\") {
+        return "\\";
+      }
+      if (match === '\\"') {
+        return '"';
+      }
+      return "\n";
+    });
     return {
       type: "string",
-      value: token.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, "\n"),
+      value
     };
   }
   if (Number.isNaN(parseFloat(token))) {

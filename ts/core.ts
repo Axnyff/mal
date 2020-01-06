@@ -14,8 +14,8 @@ import {
 import { pr_str } from "./printer";
 import { read_str } from "./reader";
 
-const prn = (arg: Data): Data => {
-  console.log(pr_str(arg, true));
+const prn = (...args: Data[]): Data => {
+  console.log(args.map(arg => pr_str(arg, true)).join(' '));
   return {
     type: "nil"
   };
@@ -246,7 +246,7 @@ export const ns: { [K: string]: Fun } = {
           const content = fs.readFileSync(filename.value);
           return {
             type: "string",
-            value: content.toString().replace(/\n/g, "\\n")
+            value: content.toString(),
           };
         } catch (err) {
           return {

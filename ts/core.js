@@ -13,8 +13,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var fs_1 = __importDefault(require("fs"));
 var printer_1 = require("./printer");
 var reader_1 = require("./reader");
-var prn = function (arg) {
-    console.log(printer_1.pr_str(arg, true));
+var prn = function () {
+    var args = [];
+    for (var _i = 0; _i < arguments.length; _i++) {
+        args[_i] = arguments[_i];
+    }
+    console.log(args.map(function (arg) { return printer_1.pr_str(arg, true); }).join(' '));
     return {
         type: "nil"
     };
@@ -255,7 +259,7 @@ exports.ns = {
                     var content = fs_1.default.readFileSync(filename.value);
                     return {
                         type: "string",
-                        value: content.toString().replace(/\n/g, "\\n")
+                        value: content.toString(),
                     };
                 }
                 catch (err) {
