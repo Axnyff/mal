@@ -13,30 +13,47 @@
 #define MAL_ERROR -1
 
 
-struct MalList {
+
+typedef struct MalList {
   struct MalVal *items;
   int len;
-};
+} mallist_t;
 
-
-union MalValContent {
-  struct MalList list;
+typedef union MalValContent {
+  mallist_t list;
   int num;
   char* str;
-  struct MalVal (*fn)(struct MalList l);
-};
+  struct MalVal (*fn)(mallist_t l);
+} malcontent_t;
 
-struct MalVal {
+typedef struct MalVal {
   int vtype;
-  union MalValContent val;
-};
+  malcontent_t val;
+} malval_t;
 
+malval_t make_symbol(char *s) {
+  malval_t res;
+  malcontent_t content;
+  res.vtype = MAL_SYMBOL;
+  content.str = s;
+  res.val = content;
+  return res;
+}
 
-struct MalVal add(struct MalList l) {
+malval_t make_error(char *s) {
+  malval_t res;
+  malcontent_t content;
+  res.vtype = MAL_ERROR;
+  content.str = s;
+  res.val = content;
+  return res;
+}
+
+malval_t add(mallist_t l) {
   int count = 0;
   int i;
-  struct MalVal res;
-  union MalValContent val;
+  malval_t res;
+  malcontent_t val;
   for (i = 0; i < l.len; i++) {
     count += l.items[i].val.num;
   }
@@ -47,9 +64,9 @@ struct MalVal add(struct MalList l) {
   return res;
 }
 
-struct MalVal sub(struct MalList l) {
-  struct MalVal res;
-  union MalValContent val;
+malval_t sub(mallist_t l) {
+  malval_t res;
+  malcontent_t val;
   int count = l.items[0].val.num - l.items[1].val.num;
   val.num = count;
   res.val = val;
@@ -58,9 +75,9 @@ struct MalVal sub(struct MalList l) {
   return res;
 }
 
-struct MalVal divide(struct MalList l) {
-  struct MalVal res;
-  union MalValContent val;
+malval_t divide(mallist_t l) {
+  malval_t res;
+  malcontent_t val;
   int count = l.items[0].val.num / l.items[1].val.num;
   val.num = count;
   res.val = val;
@@ -69,9 +86,9 @@ struct MalVal divide(struct MalList l) {
   return res;
 }
 
-struct MalVal mult(struct MalList l) {
-  struct MalVal res;
-  union MalValContent val;
+malval_t mult(mallist_t l) {
+  malval_t res;
+  malcontent_t val;
   int count = l.items[0].val.num * l.items[1].val.num;
   val.num = count;
   res.val = val;
@@ -82,13 +99,13 @@ struct MalVal mult(struct MalList l) {
 
 typedef struct EnvItem {
   char *key;
-  struct MalVal val;
+  malval_t val;
   struct EnvItem *next;
 } env_t;
 
 
 env_t *create_env() {
-  struct MalVal (*fns[])(struct MalList l) = {*add, *sub, *divide, *mult, *add};
+  malval_t (*fns[])(mallist_t l) = {*add, *sub, *divide, *mult, *add};
   char *s[] = {"+", "-", "/", "*", "+"};
   int i;
   int len = sizeof(fns) / sizeof(fns[0]);
@@ -101,8 +118,8 @@ env_t *create_env() {
       cur->next = malloc(sizeof (env_t));
       cur = cur->next;
     }
-    union MalValContent content;
-    struct MalVal val;
+    malcontent_t content;
+    malval_t val;
     val.vtype = MAL_FUNC;
     content.fn = fns[i];
     val.val = content;
@@ -113,33 +130,29 @@ env_t *create_env() {
   return result;
 }
 
-struct MalVal get(char *key, env_t *env) {
-  struct MalVal val;
-  union MalValContent content;
+malval_t get(char *key, env_t *env) {
+  malval_t val;
+  malcontent_t content;
   for (; env->next != NULL; env= env->next) {
     if (strcmp(env->key, key) == 0) {
       return env->val;
     }
   }
-  val.vtype = MAL_ERROR;
-  content.str = "NOT FOUND";
-  val.val = content;
-  return val;
-
+  return make_error("NOT FOUND");
 }
 
-struct MalVal EVAL(struct MalVal val, env_t *env);
-struct MalVal eval_ast(struct MalVal val, env_t *env) {
+malval_t EVAL(malval_t val, env_t *env);
+malval_t eval_ast(malval_t val, env_t *env) {
   if (val.vtype == MAL_SYMBOL && val.val.str[0] != ':') {
     return get(val.val.str, env);
   }
 
   if (val.vtype == MAL_LIST || val.vtype == MAL_VECTOR || val.vtype == MAL_HASHMAP) {
-    struct MalVal res;
-    union MalValContent content;
-    struct MalList list;
+    malval_t res;
+    malcontent_t content;
+    mallist_t list;
     int i;
-    struct MalVal *items = malloc(val.val.list.len * sizeof(struct MalVal));
+    malval_t *items = malloc(val.val.list.len * sizeof(malval_t));
     for (i = 0; i < val.val.list.len; i++) {
       *(items + i) = EVAL(val.val.list.items[i], env);
     }
@@ -154,7 +167,7 @@ struct MalVal eval_ast(struct MalVal val, env_t *env) {
   return val;
 }
 
-struct MalVal EVAL(struct MalVal val, env_t *env) {
+malval_t EVAL(malval_t val, env_t *env) {
   if (val.vtype != MAL_LIST) {
     return eval_ast(val, env);
   }
@@ -162,20 +175,15 @@ struct MalVal EVAL(struct MalVal val, env_t *env) {
     return val;
   }
 
-  struct MalVal newVal = eval_ast(val, env);
-  struct MalList newList;
-  struct MalVal *items = (newVal.val.list.items + 1);
-  struct MalVal (*fn)(struct MalList l) = newVal.val.list.items[0].val.fn;
+  malval_t newVal = eval_ast(val, env);
+  mallist_t newList;
+  malval_t *items = (newVal.val.list.items + 1);
+  malval_t (*fn)(mallist_t l) = newVal.val.list.items[0].val.fn;
   if (newVal.val.list.items[0].vtype != MAL_FUNC) {
     if (newVal.val.list.items[0].vtype == MAL_ERROR) {
       return newVal.val.list.items[0];
     }
-    struct MalVal val;
-    union MalValContent content;
-    content.str = "NOFN";
-    val.vtype = MAL_ERROR;
-    val.val = content;
-    return val;
+    return make_error("NOFN");
   }
   newList.items = items;
   newList.len = newVal.val.list.len -1;
@@ -269,97 +277,37 @@ char *next(struct Reader *reader) {
   return reader->tokens[reader->position++];
 }
 
-struct MalVal read_form(struct Reader *reader);
+malval_t read_form(struct Reader *reader);
 
-struct MalVal read_list(struct Reader *reader) {
-  struct MalVal res;
-  union MalValContent content;
-  struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-  struct MalList list;
+malval_t read_list_like(struct Reader *reader, int vtype, char end) {
+  malval_t res;
+  malcontent_t content;
+  malval_t *items = malloc(1000 * sizeof(malval_t));
+  mallist_t list;
   int i = 0;
   char *token;
   next(reader);
-  while ((token = peek(reader)) && token[0] != '\0' && token[0] != ')') {
+  while ((token = peek(reader)) && token[0] != '\0' && token[0] != end) {
     items[i++] = read_form(reader);
   }
-  if (token && token[0] == ')') {
+  if (token && token[0] == end) {
     next(reader);
   } else {
-    content.str = "EOF";
-    res.vtype = MAL_ERROR;
-    res.val = content;
-    return res;
+    return make_error("EOF");
   }
 
   list.len = i;
   list.items = items;
-  res.vtype = MAL_LIST;
+  res.vtype = vtype;
   content.list = list;
   res.val = content;
   return res;
 }
 
-struct MalVal read_vector(struct Reader *reader) {
-  struct MalVal res;
-  union MalValContent content;
-  struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-  struct MalList list;
-  int i = 0;
-  char *token;
-  next(reader);
-  while ((token = peek(reader)) && token[0] != '\0' && token[0] != ']') {
-    items[i++] = read_form(reader);
-  }
-  if (token && token[0] == ']') {
-    next(reader);
-  } else {
-    content.str = "EOF";
-    res.vtype = MAL_ERROR;
-    res.val = content;
-    return res;
-  }
-
-  list.len = i;
-  list.items = items;
-  res.vtype = MAL_VECTOR;
-  content.list = list;
-  res.val = content;
-  return res;
-}
-
-struct MalVal read_hashmap(struct Reader *reader) {
-  struct MalVal res;
-  union MalValContent content;
-  struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-  struct MalList list;
-  int i = 0;
-  char *token;
-  next(reader);
-  while ((token = peek(reader)) && token[0] != '\0' && token[0] != '}') {
-    items[i++] = read_form(reader);
-  }
-  if (token && token[0] == '}' && i % 2 == 0) {
-    next(reader);
-  } else {
-    content.str = "EOF";
-    res.vtype = MAL_ERROR;
-    res.val = content;
-    return res;
-  }
-
-  list.len = i;
-  list.items = items;
-  res.vtype = MAL_HASHMAP;
-  content.list = list;
-  res.val = content;
-  return res;
-}
-
-
-struct MalVal read_atom(struct Reader *reader) {
+malval_t read_atom(struct Reader *reader) {
   char* token = next(reader);
-  struct MalVal val;
-  union MalValContent content;
+  malval_t val;
+  malcontent_t content;
   if ((token[0] >= '0' && token[0] <= '9') || (token[0] == '-' && token[1] >= '0' && token[1] <= '9')) {
     content.num = atoi(token);
     val.vtype = MAL_NUMBER;
@@ -397,10 +345,7 @@ struct MalVal read_atom(struct Reader *reader) {
       s[i++] = *token++;
     }
     if (*token != '"') {
-      content.str = "EOF";
-      val.vtype = MAL_ERROR;
-      val.val = content;
-      return val;
+      return make_error("EOF");
     }
     s[i] = '\0';
     val.vtype = MAL_STRING;
@@ -414,7 +359,7 @@ struct MalVal read_atom(struct Reader *reader) {
   return val;
 }
 
-char *pr_str(struct MalVal val, int print_readability) {
+char *pr_str(malval_t val, int print_readability) {
   char *s = malloc(100);
   if (val.vtype == MAL_NUMBER) {
     sprintf(s, "%d", val.val.num);
@@ -518,159 +463,92 @@ char *pr_str(struct MalVal val, int print_readability) {
   return "WTF";
 }
 
-struct MalVal read_form(struct Reader *reader) {
+malval_t make_list(malval_t *items, int len) {
+  malval_t res;
+  malcontent_t content;
+  mallist_t list;
+  list.items =  items;
+  list.len = len;
+  res.vtype = MAL_LIST;
+  content.list = list;
+  res.val = content;
+  return res;
+}
+
+
+malval_t read_form(struct Reader *reader) {
   char *token = peek(reader);
   if (strcmp("(", token) == 0) {
-    return read_list(reader);
+    return read_list_like(reader, MAL_LIST, ')');
   }
   if (strcmp("[", token) == 0) {
-    return read_vector(reader);
+    return read_list_like(reader, MAL_VECTOR, ']');
   }
   if (strcmp("{", token) == 0) {
-    return read_hashmap(reader);
+    return read_list_like(reader, MAL_HASHMAP, '}');
   }
   if (strcmp("'", token) == 0) {
     next(reader);
-    struct MalVal res;
-    union MalValContent val;
-    struct MalList list;
 
-    struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-    struct MalVal quote;
-    union MalValContent quoteVal;
-    quote.vtype = MAL_SYMBOL;
-    quoteVal.str = "quote";
-    quote.val = quoteVal;
-
-    items[0] = quote;
+    malval_t *items = malloc(1000 * sizeof(malval_t));
+    items[0] = make_symbol("quote");
     items[1] = read_form(reader);
-    list.items = items;
-
-    list.len = 2;
-    val.list = list;
-    res.vtype = MAL_LIST;
-    res.val = val;
-    return res;
+    return make_list(items, 2);
   }
 
   if (strcmp("`", token) == 0) {
     next(reader);
-    struct MalVal res;
-    union MalValContent val;
-    struct MalList list;
 
-    struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-    struct MalVal quote;
-    union MalValContent quoteVal;
-    quote.vtype = MAL_SYMBOL;
-    quoteVal.str = "quasiquote";
-    quote.val = quoteVal;
-
-    items[0] = quote;
+    malval_t *items = malloc(1000 * sizeof(malval_t));
+    items[0] = make_symbol("quasiquote");
     items[1] = read_form(reader);
-    list.items = items;
 
-    list.len = 2;
-    val.list = list;
-    res.vtype = MAL_LIST;
-    res.val = val;
-    return res;
+    return make_list(items, 2);
   }
 
   if (strcmp("~", token) == 0) {
     next(reader);
-    struct MalVal res;
-    union MalValContent val;
-    struct MalList list;
 
-    struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-    struct MalVal quote;
-    union MalValContent quoteVal;
-    quote.vtype = MAL_SYMBOL;
-    quoteVal.str = "unquote";
-    quote.val = quoteVal;
-
-    items[0] = quote;
+    malval_t *items = malloc(1000 * sizeof(malval_t));
+    items[0] = make_symbol("unquote");
     items[1] = read_form(reader);
-    list.items = items;
 
-    list.len = 2;
-    val.list = list;
-    res.vtype = MAL_LIST;
-    res.val = val;
-    return res;
+    return make_list(items, 2);
   }
 
   if (strcmp("~@", token) == 0) {
     next(reader);
-    struct MalVal res;
-    union MalValContent val;
-    struct MalList list;
+    malval_t res;
+    malcontent_t val;
+    mallist_t list;
 
-    struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-    struct MalVal quote;
-    union MalValContent quoteVal;
-    quote.vtype = MAL_SYMBOL;
-    quoteVal.str = "splice-unquote";
-    quote.val = quoteVal;
-
-    items[0] = quote;
+    malval_t *items = malloc(1000 * sizeof(malval_t));
+    items[0] = make_symbol("splice-unquote");
     items[1] = read_form(reader);
-    list.items = items;
 
-    list.len = 2;
-    val.list = list;
-    res.vtype = MAL_LIST;
-    res.val = val;
-    return res;
+    return make_list(items, 2);
   }
+
   if (strcmp("@", token) == 0) {
     next(reader);
-    struct MalVal res;
-    union MalValContent val;
-    struct MalList list;
 
-    struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-    struct MalVal quote;
-    union MalValContent quoteVal;
-    quote.vtype = MAL_SYMBOL;
-    quoteVal.str = "deref";
-    quote.val = quoteVal;
+    malval_t *items = malloc(1000 * sizeof(malval_t));
 
-    items[0] = quote;
+    items[0] = make_symbol("deref");
     items[1] = read_form(reader);
-    list.items = items;
 
-    list.len = 2;
-    val.list = list;
-    res.vtype = MAL_LIST;
-    res.val = val;
-    return res;
+    return make_list(items, 2);
   }
 
   if (strcmp("^", token) == 0) {
     next(reader);
-    struct MalVal res;
-    union MalValContent val;
-    struct MalList list;
 
-    struct MalVal *items = malloc(1000 * sizeof(struct MalVal));
-    struct MalVal quote;
-    union MalValContent quoteVal;
-    quote.vtype = MAL_SYMBOL;
-    quoteVal.str = "with-meta";
-    quote.val = quoteVal;
-
-    items[0] = quote;
+    malval_t *items = malloc(1000 * sizeof(malval_t));
+    items[0] = make_symbol("with-meta");
     items[2] = read_form(reader);
     items[1] = read_form(reader);
-    list.items = items;
 
-    list.len = 3;
-    val.list = list;
-    res.vtype = MAL_LIST;
-    res.val = val;
-    return res;
+    return make_list(items, 3);
   }
 
 
@@ -680,7 +558,6 @@ struct MalVal read_form(struct Reader *reader) {
 
 int getLine(char *s);
 
-
 int main() {
   printf("user> ");
   char s[1000];
@@ -689,8 +566,8 @@ int main() {
   while ((len = getLine(s)) > 0) {
     struct Reader reader = read_str(s);
     if (strcmp(reader.tokens[0], "") != 0) {
-      struct MalVal val = read_form(&reader);
-      struct MalVal evaluated = EVAL(val, repl_env);
+      malval_t val = read_form(&reader);
+      malval_t evaluated = EVAL(val, repl_env);
       printf("%s\n", pr_str(evaluated, 1));
     }
     printf("user> ");
