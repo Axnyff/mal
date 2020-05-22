@@ -13,6 +13,8 @@
 #define MAL_ERROR -1
 
 
+//TODO : make_fn
+//TODO : make_num
 
 typedef struct MalList {
   struct MalVal *items;
@@ -103,17 +105,24 @@ typedef struct EnvItem {
   struct EnvItem *next;
 } env_t;
 
-
 env_t *create_env() {
-  malval_t (*fns[])(mallist_t l) = {*add, *sub, *divide, *mult, *add};
-  char *s[] = {"+", "-", "/", "*", "+"};
+  struct Funcs {
+    char *key;
+    malval_t (*fn)(mallist_t l);
+  } funcs[] = {
+    "+", *add,
+    "-", *sub,
+    "/", *divide,
+    "*", *mult,
+  };
+
   int i;
-  int len = sizeof(fns) / sizeof(fns[0]);
+  int len = sizeof(funcs) / sizeof(funcs[0]);
 
   env_t *result = malloc(sizeof (env_t) * len);
   env_t *cur = result;
 
-  for (i = 0; i < len; i++) {
+  for (i = 0; i <= len; i++) {
     if (i != 0) {
       cur->next = malloc(sizeof (env_t));
       cur = cur->next;
@@ -121,12 +130,13 @@ env_t *create_env() {
     malcontent_t content;
     malval_t val;
     val.vtype = MAL_FUNC;
-    content.fn = fns[i];
+    content.fn = funcs[i].fn;
     val.val = content;
 
-    cur->key= s[i];
+    cur->key= funcs[i].key;
     cur->val = val;
   };
+
   return result;
 }
 
@@ -199,7 +209,6 @@ char * PRINT(char *s) {
 struct Reader {
   char** tokens;
   int position;
-  int count;
 };
 
 struct Reader tokenize(char *s) {
@@ -261,7 +270,6 @@ struct Reader tokenize(char *s) {
   }
   reader.tokens = tokens;
   reader.position = 0;
-  reader.count = i;
   return reader;
 }
 
@@ -475,6 +483,14 @@ malval_t make_list(malval_t *items, int len) {
   return res;
 }
 
+malval_t simple_reader_macro(struct Reader * reader, char *s) {
+  next(reader);
+
+  malval_t *items = malloc(1000 * sizeof(malval_t));
+  items[0] = make_symbol(s);
+  items[1] = read_form(reader);
+  return make_list(items, 2);
+}
 
 malval_t read_form(struct Reader *reader) {
   char *token = peek(reader);
@@ -488,69 +504,34 @@ malval_t read_form(struct Reader *reader) {
     return read_list_like(reader, MAL_HASHMAP, '}');
   }
   if (strcmp("'", token) == 0) {
-    next(reader);
-
-    malval_t *items = malloc(1000 * sizeof(malval_t));
-    items[0] = make_symbol("quote");
-    items[1] = read_form(reader);
-    return make_list(items, 2);
+    return simple_reader_macro(reader, "quote");
   }
 
   if (strcmp("`", token) == 0) {
-    next(reader);
-
-    malval_t *items = malloc(1000 * sizeof(malval_t));
-    items[0] = make_symbol("quasiquote");
-    items[1] = read_form(reader);
-
-    return make_list(items, 2);
+    return simple_reader_macro(reader, "quasiquote");
   }
 
   if (strcmp("~", token) == 0) {
-    next(reader);
-
-    malval_t *items = malloc(1000 * sizeof(malval_t));
-    items[0] = make_symbol("unquote");
-    items[1] = read_form(reader);
-
-    return make_list(items, 2);
+    return simple_reader_macro(reader, "unquote");
   }
 
   if (strcmp("~@", token) == 0) {
-    next(reader);
-    malval_t res;
-    malcontent_t val;
-    mallist_t list;
-
-    malval_t *items = malloc(1000 * sizeof(malval_t));
-    items[0] = make_symbol("splice-unquote");
-    items[1] = read_form(reader);
-
-    return make_list(items, 2);
+    return simple_reader_macro(reader, "splice-unquote");
   }
 
   if (strcmp("@", token) == 0) {
-    next(reader);
-
-    malval_t *items = malloc(1000 * sizeof(malval_t));
-
-    items[0] = make_symbol("deref");
-    items[1] = read_form(reader);
-
-    return make_list(items, 2);
+    return simple_reader_macro(reader, "deref");
   }
 
   if (strcmp("^", token) == 0) {
-    next(reader);
+    malval_t res = simple_reader_macro(reader, "with-meta");
+    malval_t temp = read_form(reader);
 
-    malval_t *items = malloc(1000 * sizeof(malval_t));
-    items[0] = make_symbol("with-meta");
-    items[2] = read_form(reader);
-    items[1] = read_form(reader);
-
-    return make_list(items, 3);
+    res.val.list.items[2] = res.val.list.items[1];
+    res.val.list.items[1] = temp;
+    res.val.list.len = 3;
+    return res;
   }
-
 
   return read_atom(reader);
 }
