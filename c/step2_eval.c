@@ -33,8 +33,6 @@ struct MalVal {
 
 
 struct MalVal add(struct MalList l) {
-  printf("goo");
-  return l.items[0];
   int count = 0;
   int i;
   struct MalVal res;
@@ -60,6 +58,28 @@ struct MalVal sub(struct MalList l) {
   return res;
 }
 
+struct MalVal divide(struct MalList l) {
+  struct MalVal res;
+  union MalValContent val;
+  int count = l.items[0].val.num / l.items[1].val.num;
+  val.num = count;
+  res.val = val;
+  res.vtype = MAL_NUMBER;
+
+  return res;
+}
+
+struct MalVal mult(struct MalList l) {
+  struct MalVal res;
+  union MalValContent val;
+  int count = l.items[0].val.num * l.items[1].val.num;
+  val.num = count;
+  res.val = val;
+  res.vtype = MAL_NUMBER;
+
+  return res;
+}
+
 typedef struct EnvItem {
   char *key;
   struct MalVal val;
@@ -68,8 +88,8 @@ typedef struct EnvItem {
 
 
 env_t *create_env() {
-  struct MalVal (*fns[])(struct MalList l) = {*add, *sub, *sub};
-  char *s[] = {"+", "-", "/"};
+  struct MalVal (*fns[])(struct MalList l) = {*add, *sub, *divide, *mult, *add};
+  char *s[] = {"+", "-", "/", "*", "+"};
   int i;
   int len = sizeof(fns) / sizeof(fns[0]);
 
@@ -89,7 +109,6 @@ env_t *create_env() {
 
     cur->key= s[i];
     cur->val = val;
-    cur->next = NULL;
   };
   return result;
 }
@@ -111,12 +130,11 @@ struct MalVal get(char *key, env_t *env) {
 
 struct MalVal EVAL(struct MalVal val, env_t *env);
 struct MalVal eval_ast(struct MalVal val, env_t *env) {
-  if (val.vtype == MAL_SYMBOL) {
+  if (val.vtype == MAL_SYMBOL && val.val.str[0] != ':') {
     return get(val.val.str, env);
   }
 
-  if (val.vtype == MAL_LIST) {
-    return val;
+  if (val.vtype == MAL_LIST || val.vtype == MAL_VECTOR || val.vtype == MAL_HASHMAP) {
     struct MalVal res;
     union MalValContent content;
     struct MalList list;
@@ -130,6 +148,7 @@ struct MalVal eval_ast(struct MalVal val, env_t *env) {
     list.len = val.val.list.len;
     content.list = list;
     res.val = content;
+    res.vtype = val.vtype;
     return res;
   }
   return val;
@@ -142,14 +161,25 @@ struct MalVal EVAL(struct MalVal val, env_t *env) {
   if (val.val.list.len == 0) {
     return val;
   }
+
   struct MalVal newVal = eval_ast(val, env);
   struct MalList newList;
   struct MalVal *items = (newVal.val.list.items + 1);
   struct MalVal (*fn)(struct MalList l) = newVal.val.list.items[0].val.fn;
-  /* return newVal.val.list.items[0]; */
+  if (newVal.val.list.items[0].vtype != MAL_FUNC) {
+    if (newVal.val.list.items[0].vtype == MAL_ERROR) {
+      return newVal.val.list.items[0];
+    }
+    struct MalVal val;
+    union MalValContent content;
+    content.str = "NOFN";
+    val.vtype = MAL_ERROR;
+    val.val = content;
+    return val;
+  }
   newList.items = items;
   newList.len = newVal.val.list.len -1;
-  
+
   return fn(newList);
 }
 
@@ -330,7 +360,7 @@ struct MalVal read_atom(struct Reader *reader) {
   char* token = next(reader);
   struct MalVal val;
   union MalValContent content;
-  if (token[0] >= '0' && token[0] <= '9') {
+  if ((token[0] >= '0' && token[0] <= '9') || (token[0] == '-' && token[1] >= '0' && token[1] <= '9')) {
     content.num = atoi(token);
     val.vtype = MAL_NUMBER;
     val.val = content;
