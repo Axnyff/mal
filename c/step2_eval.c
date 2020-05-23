@@ -13,9 +13,6 @@
 #define MAL_ERROR -1
 
 
-//TODO : make_fn
-//TODO : make_num
-
 typedef struct MalList {
   struct MalVal *items;
   int len;
@@ -32,6 +29,40 @@ typedef struct MalVal {
   int vtype;
   malcontent_t val;
 } malval_t;
+
+
+malval_t make_list_like(malval_t *items, int len, int vtype) {
+  malval_t res;
+  malcontent_t content;
+  mallist_t list;
+  list.items =  items;
+  list.len = len;
+  res.vtype = vtype;
+  content.list = list;
+  res.val = content;
+  return res;
+}
+
+malval_t make_list(malval_t *items, int len) {
+  return make_list_like(items, len, MAL_LIST);
+}
+malval_t make_fn(malval_t (*fn)(mallist_t l)) {
+  malval_t res;
+  malcontent_t content;
+  res.vtype = MAL_FUNC;
+  content.fn = fn;
+  res.val = content;
+  return res;
+}
+
+malval_t make_num(int num) {
+  malval_t res;
+  malcontent_t content;
+  res.vtype = MAL_NUMBER;
+  content.num = num;
+  res.val = content;
+  return res;
+}
 
 malval_t make_symbol(char *s) {
   malval_t res;
@@ -54,49 +85,22 @@ malval_t make_error(char *s) {
 malval_t add(mallist_t l) {
   int count = 0;
   int i;
-  malval_t res;
-  malcontent_t val;
   for (i = 0; i < l.len; i++) {
     count += l.items[i].val.num;
   }
-  val.num = count;
-  res.val = val;
-  res.vtype = MAL_NUMBER;
-
-  return res;
+  return make_num(count);
 }
 
 malval_t sub(mallist_t l) {
-  malval_t res;
-  malcontent_t val;
-  int count = l.items[0].val.num - l.items[1].val.num;
-  val.num = count;
-  res.val = val;
-  res.vtype = MAL_NUMBER;
-
-  return res;
+  return make_num(l.items[0].val.num - l.items[1].val.num);
 }
 
 malval_t divide(mallist_t l) {
-  malval_t res;
-  malcontent_t val;
-  int count = l.items[0].val.num / l.items[1].val.num;
-  val.num = count;
-  res.val = val;
-  res.vtype = MAL_NUMBER;
-
-  return res;
+  return make_num(l.items[0].val.num / l.items[1].val.num);
 }
 
 malval_t mult(mallist_t l) {
-  malval_t res;
-  malcontent_t val;
-  int count = l.items[0].val.num * l.items[1].val.num;
-  val.num = count;
-  res.val = val;
-  res.vtype = MAL_NUMBER;
-
-  return res;
+  return make_num(l.items[0].val.num * l.items[1].val.num);
 }
 
 typedef struct EnvItem {
@@ -110,10 +114,10 @@ env_t *create_env() {
     char *key;
     malval_t (*fn)(mallist_t l);
   } funcs[] = {
-    "+", *add,
-    "-", *sub,
-    "/", *divide,
-    "*", *mult,
+    {"+", *add},
+    {"-", *sub},
+    {"/", *divide},
+    {"*", *mult},
   };
 
   int i;
@@ -127,22 +131,14 @@ env_t *create_env() {
       cur->next = malloc(sizeof (env_t));
       cur = cur->next;
     }
-    malcontent_t content;
-    malval_t val;
-    val.vtype = MAL_FUNC;
-    content.fn = funcs[i].fn;
-    val.val = content;
-
-    cur->key= funcs[i].key;
-    cur->val = val;
+    cur->key = funcs[i].key;
+    cur->val = make_fn(funcs[i].fn);
   };
 
   return result;
 }
 
 malval_t get(char *key, env_t *env) {
-  malval_t val;
-  malcontent_t content;
   for (; env->next != NULL; env= env->next) {
     if (strcmp(env->key, key) == 0) {
       return env->val;
@@ -158,21 +154,12 @@ malval_t eval_ast(malval_t val, env_t *env) {
   }
 
   if (val.vtype == MAL_LIST || val.vtype == MAL_VECTOR || val.vtype == MAL_HASHMAP) {
-    malval_t res;
-    malcontent_t content;
-    mallist_t list;
     int i;
     malval_t *items = malloc(val.val.list.len * sizeof(malval_t));
     for (i = 0; i < val.val.list.len; i++) {
       *(items + i) = EVAL(val.val.list.items[i], env);
     }
-
-    list.items = items;
-    list.len = val.val.list.len;
-    content.list = list;
-    res.val = content;
-    res.vtype = val.vtype;
-    return res;
+    return make_list_like(items, val.val.list.len, val.vtype);
   }
   return val;
 }
@@ -471,17 +458,6 @@ char *pr_str(malval_t val, int print_readability) {
   return "WTF";
 }
 
-malval_t make_list(malval_t *items, int len) {
-  malval_t res;
-  malcontent_t content;
-  mallist_t list;
-  list.items =  items;
-  list.len = len;
-  res.vtype = MAL_LIST;
-  content.list = list;
-  res.val = content;
-  return res;
-}
 
 malval_t simple_reader_macro(struct Reader * reader, char *s) {
   next(reader);
