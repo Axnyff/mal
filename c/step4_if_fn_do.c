@@ -12,7 +12,7 @@
 #define MAL_NIL 7
 #define MAL_BOOL 8
 #define MAL_FUNC 9
-#define MAL_CUSTOM_FUNC 9
+#define MAL_CUSTOM_FUNC 10
 #define MAL_ERROR -1
 
 typedef struct MalVal malval_t;
@@ -35,6 +35,7 @@ typedef union MalValContent {
   int num;
   char* str;
   malval_t (*fn)(mallist_t l);
+  malfn_t custom_fn;
 } malcontent_t;
 
 struct MalVal {
@@ -64,6 +65,19 @@ malval_t make_fn(malval_t (*fn)(mallist_t l)) {
   malcontent_t content;
   res.vtype = MAL_FUNC;
   content.fn = fn;
+  res.val = content;
+  return res;
+}
+
+malval_t make_custom_fn(malval_t *ast, mallist_t *params, env_t *env) {
+  malval_t res;
+  malcontent_t content;
+  malfn_t fn;
+  fn.ast = ast;
+  fn.params = params;
+  fn.env = env;
+  res.vtype = MAL_CUSTOM_FUNC;
+  content.custom_fn = fn;
   res.val = content;
   return res;
 }
@@ -396,6 +410,14 @@ malval_t EVAL(malval_t val, env_t *env) {
       return EVAL(val.val.list.items[2], new_env);
     }
 
+    if (strcmp(val.val.list.items[0].val.str, "fn*") == 0) {
+      return make_custom_fn(
+          &val.val.list.items[2],
+          &val.val.list.items[1].val.list,
+          env
+      );
+    }
+
 
     if (strcmp(val.val.list.items[0].val.str, "do") == 0) {
       int i;
@@ -422,17 +444,26 @@ malval_t EVAL(malval_t val, env_t *env) {
   malval_t new_val = eval_ast(val, env);
   mallist_t new_list;
   malval_t *items = (new_val.val.list.items + 1);
-  malval_t (*fn)(mallist_t l) = new_val.val.list.items[0].val.fn;
-  if (new_val.val.list.items[0].vtype != MAL_FUNC) {
-    if (new_val.val.list.items[0].vtype == MAL_ERROR) {
-      return new_val.val.list.items[0];
-    }
-    return make_error("NOFN");
+  if (new_val.val.list.items[0].vtype == MAL_FUNC) {
+    malval_t (*fn)(mallist_t l) = new_val.val.list.items[0].val.fn;
+    new_list.items = items;
+    new_list.len = new_val.val.list.len -1;
+    return fn(new_list);
   }
-  new_list.items = items;
-  new_list.len = new_val.val.list.len -1;
+  if (new_val.val.list.items[0].vtype == MAL_CUSTOM_FUNC) {
+    malfn_t custom_fn = new_val.val.list.items[0].val.custom_fn;
+    env_t *new_env = create_env(env);
+    int i = 0;
+    for (i = 0; i < custom_fn.params->len; i++) {
+      set(new_env, custom_fn.params->items[i].val.str, new_val.val.list.items[i + 1]);
+    }
+    return EVAL(*custom_fn.ast, new_env);
+  }
+  if (new_val.val.list.items[0].vtype == MAL_ERROR) {
+    return new_val.val.list.items[0];
+  }
+  return make_error("NOFN");
 
-  return fn(new_list);
 }
 
 struct Reader {
@@ -761,18 +792,23 @@ malval_t read_form(struct Reader *reader) {
 
 int getLine(char *s);
 
+void repl(char *s, env_t *env) {
+  struct Reader reader = read_str(s);
+  if (strcmp(reader.tokens[0], "") != 0) {
+    malval_t val = read_form(&reader);
+    malval_t evaluated = EVAL(val, env);
+    printf("%s\n", pr_str(evaluated, 1));
+  }
+}
+
 int main() {
-  printf("user> ");
   char s[1000];
   int len;
   env_t *env = repl_env();
+  repl("(def! not (fn* (a) (if a false true)))", env);
+  printf("user> ");
   while ((len = getLine(s)) > 0) {
-    struct Reader reader = read_str(s);
-    if (strcmp(reader.tokens[0], "") != 0) {
-      malval_t val = read_form(&reader);
-      malval_t evaluated = EVAL(val, env);
-      printf("%s\n", pr_str(evaluated, 1));
-    }
+    repl(s, env);
     printf("user> ");
   }
 }
