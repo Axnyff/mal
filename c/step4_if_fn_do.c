@@ -211,6 +211,9 @@ malval_t is_empty(mallist_t l) {
 }
 
 malval_t count(mallist_t l) {
+  if (l.items[0].vtype == MAL_NIL) {
+    return make_num(0);
+  }
   return make_num(l.items[0].val.list.len);
 }
 
@@ -455,6 +458,13 @@ malval_t EVAL(malval_t val, env_t *env) {
     env_t *new_env = create_env(env);
     int i = 0;
     for (i = 0; i < custom_fn.params->len; i++) {
+      if (strcmp(custom_fn.params->items[i].val.str, "&") == 0) {
+        int new_len = new_val.val.list.len - i - 1;
+        set(new_env, custom_fn.params->items[i+1].val.str,
+            make_list(new_val.val.list.items + i + 1, new_val.val.list.len - i - 1)
+           );
+        break;
+      }
       set(new_env, custom_fn.params->items[i].val.str, new_val.val.list.items[i + 1]);
     }
     return EVAL(*custom_fn.ast, new_env);
@@ -792,23 +802,22 @@ malval_t read_form(struct Reader *reader) {
 
 int getLine(char *s);
 
-void repl(char *s, env_t *env) {
-  struct Reader reader = read_str(s);
-  if (strcmp(reader.tokens[0], "") != 0) {
-    malval_t val = read_form(&reader);
-    malval_t evaluated = EVAL(val, env);
-    printf("%s\n", pr_str(evaluated, 1));
-  }
-}
 
 int main() {
+  printf("user> ");
   char s[1000];
   int len;
   env_t *env = repl_env();
-  repl("(def! not (fn* (a) (if a false true)))", env);
-  printf("user> ");
+  struct Reader reader = read_str("(def! not (fn* (a) (if a false true)))");
+  malval_t val = read_form(&reader);
+  malval_t evaluated = EVAL(val, env);
   while ((len = getLine(s)) > 0) {
-    repl(s, env);
+    struct Reader reader = read_str(s);
+    if (strcmp(reader.tokens[0], "") != 0) {
+      malval_t val = read_form(&reader);
+      malval_t evaluated = EVAL(val, env);
+      printf("%s\n", pr_str(evaluated, 1));
+    }
     printf("user> ");
   }
 }
