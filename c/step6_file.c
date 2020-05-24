@@ -13,6 +13,7 @@
 #define MAL_BOOL 8
 #define MAL_FUNC 9
 #define MAL_CUSTOM_FUNC 10
+#define MAL_ATOM 11
 #define MAL_ERROR -1
 
 typedef struct MalVal malval_t;
@@ -26,6 +27,10 @@ struct Reader {
 
 malval_t read_form(struct Reader *reader);
 malval_t read_str(char *s);
+malval_t EVAL(malval_t val, env_t *env);
+env_t *create_env(env_t *outer);
+void set(env_t *env, char *key, malval_t val);
+malval_t get(char *key, env_t *env_ptr);
 int getLine(char *s);
 char *getFile(char *filename);
 
@@ -45,8 +50,9 @@ typedef union MalValContent {
   mallist_t list;
   int num;
   char* str;
-  malval_t (*fn)(mallist_t l);
+  malval_t (*fn)(mallist_t l, env_t *env);
   malfn_t custom_fn;
+  malval_t *atom;
 } malcontent_t;
 
 struct MalVal {
@@ -56,6 +62,16 @@ struct MalVal {
 
 
 char *pr_str(malval_t val, int print_readability);
+
+malval_t make_atom(malval_t *val) {
+  malval_t res;
+  malcontent_t content;
+  res.vtype = MAL_ATOM;
+  content.atom = val;
+  res.val = content;
+  return res;
+}
+
 malval_t make_list_like(malval_t *items, int len, int vtype) {
   malval_t res;
   malcontent_t content;
@@ -71,7 +87,7 @@ malval_t make_list_like(malval_t *items, int len, int vtype) {
 malval_t make_list(malval_t *items, int len) {
   return make_list_like(items, len, MAL_LIST);
 }
-malval_t make_fn(malval_t (*fn)(mallist_t l)) {
+malval_t make_fn(malval_t (*fn)(mallist_t l, env_t *env)) {
   malval_t res;
   malcontent_t content;
   res.vtype = MAL_FUNC;
@@ -141,7 +157,7 @@ malval_t make_string(char *s) {
   return res;
 }
 
-malval_t add(mallist_t l) {
+malval_t add(mallist_t l, env_t *env) {
   int count = 0;
   int i;
   for (i = 0; i < l.len; i++) {
@@ -150,19 +166,19 @@ malval_t add(mallist_t l) {
   return make_num(count);
 }
 
-malval_t sub(mallist_t l) {
+malval_t sub(mallist_t l, env_t *env) {
   return make_num(l.items[0].val.num - l.items[1].val.num);
 }
 
-malval_t divide(mallist_t l) {
+malval_t divide(mallist_t l, env_t *env) {
   return make_num(l.items[0].val.num / l.items[1].val.num);
 }
 
-malval_t mult(mallist_t l) {
+malval_t mult(mallist_t l, env_t *env) {
   return make_num(l.items[0].val.num * l.items[1].val.num);
 }
 
-malval_t prstr(mallist_t l) {
+malval_t prstr(mallist_t l, env_t *env) {
   char *s = malloc(100);
   int i;
   for (i = 0; i < l.len; i++) {
@@ -174,7 +190,7 @@ malval_t prstr(mallist_t l) {
   return make_string(s);
 }
 
-malval_t str(mallist_t l) {
+malval_t str(mallist_t l, env_t *env) {
   char *s = malloc(100);
   int i;
   for (i = 0; i < l.len; i++) {
@@ -183,7 +199,7 @@ malval_t str(mallist_t l) {
   return make_string(s);
 }
 
-malval_t prn(mallist_t l) {
+malval_t prn(mallist_t l, env_t *env) {
   char *s = malloc(100);
   int i;
   for (i = 0; i < l.len; i++) {
@@ -196,7 +212,7 @@ malval_t prn(mallist_t l) {
   return make_nil();
 }
 
-malval_t println(mallist_t l) {
+malval_t println(mallist_t l, env_t *env) {
   char *s = malloc(100);
   int i;
   for (i = 0; i < l.len; i++) {
@@ -209,19 +225,19 @@ malval_t println(mallist_t l) {
   return make_nil();
 }
 
-malval_t list(mallist_t l) {
+malval_t list(mallist_t l, env_t *env) {
   return make_list(l.items, l.len);
 }
 
-malval_t is_list(mallist_t l) {
+malval_t is_list(mallist_t l, env_t *env) {
   return make_bool(l.items[0].vtype == MAL_LIST);
 }
 
-malval_t is_empty(mallist_t l) {
+malval_t is_empty(mallist_t l, env_t *env) {
   return make_bool(l.items[0].val.list.len == 0);
 }
 
-malval_t count(mallist_t l) {
+malval_t count(mallist_t l, env_t *env) {
   if (l.items[0].vtype == MAL_NIL) {
     return make_num(0);
   }
@@ -267,35 +283,89 @@ int _equal(malval_t item1, malval_t item2) {
   return strcmp(item1.val.str,item2.val.str) == 0;
 }
 
-malval_t equal(mallist_t l) {
+malval_t equal(mallist_t l, env_t *env) {
   return make_bool(_equal(l.items[0], l.items[1]));
 }
 
-malval_t inf(mallist_t l) {
+malval_t inf(mallist_t l, env_t *env) {
   return make_bool(l.items[0].val.num < l.items[1].val.num);
 }
 
-malval_t infeq(mallist_t l) {
+malval_t infeq(mallist_t l, env_t *env) {
   return make_bool(l.items[0].val.num <= l.items[1].val.num);
 }
 
-malval_t sup(mallist_t l) {
+malval_t sup(mallist_t l, env_t *env) {
   return make_bool(l.items[0].val.num > l.items[1].val.num);
 }
 
-malval_t supeq(mallist_t l) {
+malval_t supeq(mallist_t l, env_t *env) {
   return make_bool(l.items[0].val.num >= l.items[1].val.num);
 }
 
-malval_t readstring(mallist_t l) {
+malval_t readstring(mallist_t l, env_t *env) {
   if (l.len == 0) {
     return make_nil();
   }
   return read_str(l.items[0].val.str);
 }
 
-malval_t slurp(mallist_t l) {
+malval_t slurp(mallist_t l, env_t *env) {
   return make_string(getFile(l.items[0].val.str));
+}
+
+malval_t atom(mallist_t l, env_t *env) {
+  return make_atom(&l.items[0]);
+}
+
+malval_t is_atom(mallist_t l, env_t *env) {
+  return make_bool(l.items[0].vtype == MAL_ATOM);
+}
+
+malval_t deref(mallist_t l, env_t *env) {
+  return *(l.items[0].val.atom);
+}
+
+malval_t reset(mallist_t l, env_t *env) {
+  *l.items[0].val.atom = l.items[1];
+  return l.items[1];
+}
+
+malval_t eval(mallist_t l, env_t *env) {
+  return EVAL(l.items[0], env);
+}
+
+malval_t swap(mallist_t l, env_t *env) {
+  malval_t *items = malloc((l.len + 1)* sizeof(malval_t));
+  int i;
+
+  *items = *l.items[0].val.atom;
+  for (i = 1; i < l.len; i++) {
+    *(items + i) = l.items[i + 1];
+  }
+  malval_t list_val = make_list(items, l.len -1);
+  mallist_t list = list_val.val.list;
+
+  malval_t res;
+  if (l.items[1].vtype == MAL_CUSTOM_FUNC) {
+    malfn_t custom_fn = l.items[0].val.custom_fn;
+    env_t *new_env = create_env(env);
+    for (i = 0; i < custom_fn.params->len; i++) {
+      if (strcmp(custom_fn.params->items[i].val.str, "&") == 0) {
+        set(new_env, custom_fn.params->items[i+1].val.str,
+            make_list(list.items + i, list.len - i)
+           );
+        break;
+      }
+      set(new_env, custom_fn.params->items[i].val.str, list.items[i + 0]);
+    }
+    res = EVAL(*custom_fn.ast, new_env);
+  } else {
+    res = l.items[1].val.fn(list, env);
+  }
+  malval_t **atomval = &l.items[0].val.atom;
+  **atomval = res;
+  return res;
 }
 
 struct EnvItem {
@@ -312,7 +382,7 @@ struct Env {
 env_t *repl_env() {
   struct Funcs {
     char *key;
-    malval_t (*fn)(mallist_t l);
+    malval_t (*fn)(mallist_t l, env_t *env);
   } funcs[] = {
     {"+", *add},
     {"-", *sub},
@@ -331,13 +401,20 @@ env_t *repl_env() {
     {"<=", *infeq},
     {">", *sup},
     {">=", *supeq},
+    {"eval", *eval},
     {"read-string", *readstring},
     {"slurp", *slurp},
+    {"atom", *atom},
+    {"atom?", *is_atom},
+    {"deref", *deref},
+    {"reset!", *reset},
+    {"swap!", *swap},
   };
 
   int i;
   int len = sizeof(funcs) / sizeof(funcs[0]);
 
+  env_t *env = malloc(sizeof(env_t));
   envitem_t *result = malloc(sizeof (envitem_t));
   envitem_t *cur = result;
 
@@ -349,7 +426,6 @@ env_t *repl_env() {
     cur->key = funcs[i].key;
     cur->val = make_fn(funcs[i].fn);
   }
-  env_t *env = malloc(sizeof(env_t));
   env->outer = NULL;
   env->items = result;
 
@@ -390,7 +466,6 @@ env_t *create_env(env_t *outer) {
   return env;
 }
 
-malval_t EVAL(malval_t val, env_t *env);
 malval_t eval_ast(malval_t val, env_t *env) {
   if (val.vtype == MAL_SYMBOL && val.val.str[0] != ':') {
     return get(val.val.str, env);
@@ -470,19 +545,16 @@ malval_t EVAL(malval_t val, env_t *env) {
         }
         return EVAL(val.val.list.items[2], env);
       }
-      if (strcmp(val.val.list.items[0].val.str, "eval") == 0) {
-        return EVAL(EVAL(val.val.list.items[1], env), env);
-      }
     }
 
     malval_t new_val = eval_ast(val, env);
     mallist_t new_list;
     malval_t *items = (new_val.val.list.items + 1);
     if (new_val.val.list.items[0].vtype == MAL_FUNC) {
-      malval_t (*fn)(mallist_t l) = new_val.val.list.items[0].val.fn;
+      malval_t (*fn)(mallist_t l, env_t *env) = new_val.val.list.items[0].val.fn;
       new_list.items = items;
       new_list.len = new_val.val.list.len -1;
-      return fn(new_list);
+      return fn(new_list, env);
     }
     if (new_val.val.list.items[0].vtype == MAL_CUSTOM_FUNC) {
       malfn_t custom_fn = new_val.val.list.items[0].val.custom_fn;
@@ -514,7 +586,7 @@ struct Reader tokenize(char *s) {
   char** tokens = malloc(sizeof(char *) * 1000);
   int i = 0;
   while (*s != '\0') {
-    char *token = malloc(100);
+    char *token = malloc(1000);
     int j;
     while (isspace(*s) || *s == ',') {
       s++;
@@ -551,7 +623,7 @@ struct Reader tokenize(char *s) {
       continue;
     }
     if (*s == ';') {
-      while (*s) {
+      while (*s && *s != '\n') {
         s++;
       }
       continue;
@@ -769,6 +841,12 @@ char *pr_str(malval_t val, int print_readability) {
   if (val.vtype == MAL_FUNC || val.vtype == MAL_CUSTOM_FUNC) {
     return "#function";
   }
+  if (val.vtype == MAL_ATOM) {
+    char *atom_content = pr_str(*val.val.atom, print_readability);
+    sprintf(s, "(atom %s)", atom_content);
+    return s;
+  }
+  printf("%d\n", val.vtype);
   return "WTF";
 }
 
@@ -871,20 +949,19 @@ int getLine(char *s) {
 
 char *getFile(char *filename) {
   FILE *fp = fopen(filename, "r");
-  int size;
-  char *s;
-  fseek(fp, 0L, SEEK_END);
-  size = ftell(fp);
-  rewind(fp);
-  s = malloc(size);
+
+  int max = 1000000;
+  char *s = malloc(max);
   int c;
+  int i = 0;
   while ((c = fgetc(fp)) && c != EOF) {
-    *s++ = c;
+    *(s + i++) = c;
+    if (i == max -1) {
+      max = max + max;
+      s = realloc(s, max);
+    }
   }
-  if (c == '\n') {
-    *s++ = c;
-  }
-  *s = '\0';
+  *(s + i) = '\0';
   fclose(fp);
   return s;
 }
