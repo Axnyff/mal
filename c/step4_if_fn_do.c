@@ -459,7 +459,7 @@ malval_t EVAL(malval_t val, env_t *env) {
     }
     if (new_val.val.list.items[0].vtype == MAL_CUSTOM_FUNC) {
       malfn_t custom_fn = new_val.val.list.items[0].val.custom_fn;
-      env_t *new_env = create_env(env);
+      env_t *new_env = create_env(custom_fn.env);
       int i = 0;
       for (i = 0; i < custom_fn.params->len; i++) {
         if (strcmp(custom_fn.params->items[i].val.str, "&") == 0) {
