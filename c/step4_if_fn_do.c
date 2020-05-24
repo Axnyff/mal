@@ -9,28 +9,38 @@
 #define MAL_NUMBER 4
 #define MAL_SYMBOL 5
 #define MAL_STRING 6
-#define MAL_FUNC 7
-#define MAL_NIL 8
+#define MAL_NIL 7
 #define MAL_BOOL 8
+#define MAL_FUNC 9
+#define MAL_CUSTOM_FUNC 9
 #define MAL_ERROR -1
 
+typedef struct MalVal malval_t;
+typedef struct Env env_t;
+typedef struct EnvItem envitem_t;
 
 typedef struct MalList {
-  struct MalVal *items;
+  malval_t *items;
   int len;
 } mallist_t;
+
+typedef struct MalCustomFunc {
+  env_t *env;
+  malval_t *ast;
+  mallist_t *params;
+} malfn_t;
 
 typedef union MalValContent {
   mallist_t list;
   int num;
   char* str;
-  struct MalVal (*fn)(mallist_t l);
+  malval_t (*fn)(mallist_t l);
 } malcontent_t;
 
-typedef struct MalVal {
+struct MalVal {
   int vtype;
   malcontent_t val;
-} malval_t;
+};
 
 
 char *pr_str(malval_t val, int print_readability);
@@ -249,13 +259,18 @@ malval_t supeq(mallist_t l) {
   return make_bool(l.items[0].val.num >= l.items[1].val.num);
 }
 
-typedef struct EnvItem {
+struct EnvItem {
   char *key;
   malval_t val;
-  struct EnvItem *next;
-} env_t;
+  envitem_t *next;
+};
 
-env_t *create_env() {
+struct Env {
+  envitem_t *items;
+  struct Env *outer;
+};
+
+env_t *repl_env() {
   struct Funcs {
     char *key;
     malval_t (*fn)(mallist_t l);
@@ -282,27 +297,33 @@ env_t *create_env() {
   int i;
   int len = sizeof(funcs) / sizeof(funcs[0]);
 
-  env_t *result = malloc(sizeof (env_t) * len);
-  env_t *cur = result;
+  envitem_t *result = malloc(sizeof (envitem_t));
+  envitem_t *cur = result;
 
   for (i = 0; i <= len; i++) {
     if (i != 0) {
-      cur->next = malloc(sizeof (env_t));
+      cur->next = malloc(sizeof (envitem_t));
       cur = cur->next;
     }
     cur->key = funcs[i].key;
     cur->val = make_fn(funcs[i].fn);
-  };
+  }
+  env_t *env = malloc(sizeof(env_t));
+  env->outer = NULL;
+  env->items = result;
 
-  return result;
+  return env;
 }
 
-malval_t get(char *key, env_t **env_ptr) {
-  env_t *env = *env_ptr;
-  for (; env->next != NULL; env = env->next) {
-    if (strcmp(env->key, key) == 0) {
-      return env->val;
+malval_t get(char *key, env_t *env_ptr) {
+  envitem_t *item = env_ptr->items;
+  for (; item != NULL; item = item->next) {
+    if (strcmp(item->key, key) == 0) {
+      return item->val;
     }
+  }
+  if (env_ptr->outer != NULL) {
+    return get(key, env_ptr->outer);
   }
   char *s = malloc(100);
   strcat(s, key);
@@ -311,19 +332,24 @@ malval_t get(char *key, env_t **env_ptr) {
   return make_error(s);
 }
 
-env_t *set(env_t **env, char *key, malval_t val) {
+void set(env_t *env, char *key, malval_t val) {
   if (val.vtype == MAL_ERROR) {
-    return *env;
+    return;
   }
-  env_t *new_env = malloc(sizeof (env_t));
-  new_env->key = key;
-  new_env->val = val;
-  new_env->next = *env;
-  return new_env;
+  envitem_t *item = malloc(sizeof (envitem_t));
+  item->key = key;
+  item->val = val;
+  item->next = env->items;
+  env->items = item;
 }
 
-malval_t EVAL(malval_t val, env_t **env);
-malval_t eval_ast(malval_t val, env_t **env) {
+env_t *create_env(env_t *outer) {
+  env_t *env = malloc(sizeof (env_t));
+  env->outer = outer;
+}
+
+malval_t EVAL(malval_t val, env_t *env);
+malval_t eval_ast(malval_t val, env_t *env) {
   if (val.vtype == MAL_SYMBOL && val.val.str[0] != ':') {
     return get(val.val.str, env);
   }
@@ -339,7 +365,7 @@ malval_t eval_ast(malval_t val, env_t **env) {
   return val;
 }
 
-malval_t EVAL(malval_t val, env_t **env) {
+malval_t EVAL(malval_t val, env_t *env) {
   if (val.vtype != MAL_LIST) {
     return eval_ast(val, env);
   }
@@ -351,7 +377,7 @@ malval_t EVAL(malval_t val, env_t **env) {
 
     if (strcmp(val.val.list.items[0].val.str, "def!") == 0) {
       malval_t evaluated = EVAL(val.val.list.items[2], env);
-      *env = set(env,
+      set(env,
           val.val.list.items[1].val.str,
           evaluated);
       return evaluated;
@@ -359,15 +385,15 @@ malval_t EVAL(malval_t val, env_t **env) {
 
     if (strcmp(val.val.list.items[0].val.str, "let*") == 0) {
       mallist_t bindings = val.val.list.items[1].val.list;
-      env_t *new_env = *env;
+      env_t *new_env = create_env(env);
       int i;
       for (i = 0; i < bindings.len; i += 2) {
-        new_env = set(&new_env,
+        set(new_env,
             bindings.items[i].val.str,
-            EVAL(bindings.items[i + 1], &new_env)
+            EVAL(bindings.items[i + 1], new_env)
         );
       }
-      return EVAL(val.val.list.items[2], &new_env);
+      return EVAL(val.val.list.items[2], new_env);
     }
 
 
@@ -672,7 +698,7 @@ char *pr_str(malval_t val, int print_readability) {
       return s;
     }
   }
-  if (val.vtype == MAL_FUNC) {
+  if (val.vtype == MAL_FUNC || val.vtype == MAL_CUSTOM_FUNC) {
     return "#function";
   }
   return "WTF";
@@ -739,12 +765,12 @@ int main() {
   printf("user> ");
   char s[1000];
   int len;
-  env_t *repl_env = create_env();
+  env_t *env = repl_env();
   while ((len = getLine(s)) > 0) {
     struct Reader reader = read_str(s);
     if (strcmp(reader.tokens[0], "") != 0) {
       malval_t val = read_form(&reader);
-      malval_t evaluated = EVAL(val, &repl_env);
+      malval_t evaluated = EVAL(val, env);
       printf("%s\n", pr_str(evaluated, 1));
     }
     printf("user> ");

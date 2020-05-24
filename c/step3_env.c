@@ -10,6 +10,8 @@
 #define MAL_SYMBOL 5
 #define MAL_STRING 6
 #define MAL_FUNC 7
+#define MAL_NIL 8
+#define MAL_BOOL 8
 #define MAL_ERROR -1
 
 
@@ -74,10 +76,31 @@ malval_t make_symbol(char *s) {
   return res;
 }
 
+malval_t make_bool(int v) {
+  malval_t res = make_symbol(v ? "true": "false");
+  res.vtype = MAL_BOOL;
+  return res;
+}
+
+malval_t make_nil() {
+  malval_t res = make_symbol("nil");
+  res.vtype = MAL_NIL;
+  return res;
+}
+
 malval_t make_error(char *s) {
   malval_t res;
   malcontent_t content;
   res.vtype = MAL_ERROR;
+  content.str = s;
+  res.val = content;
+  return res;
+}
+
+malval_t make_string(char *s) {
+  malval_t res;
+  malcontent_t content;
+  res.vtype = MAL_STRING;
   content.str = s;
   res.val = content;
   return res;
@@ -104,13 +127,140 @@ malval_t mult(mallist_t l) {
   return make_num(l.items[0].val.num * l.items[1].val.num);
 }
 
+malval_t prstr(mallist_t l) {
+  char *s = malloc(100);
+  int i;
+  for (i = 0; i < l.len; i++) {
+    if (i != 0) {
+      strcat(s, " ");
+    }
+    strcat(s, pr_str(l.items[i], 1));
+  }
+  return make_string(s);
+}
+
+malval_t str(mallist_t l) {
+  char *s = malloc(100);
+  int i;
+  for (i = 0; i < l.len; i++) {
+    strcat(s, pr_str(l.items[i], 0));
+  }
+  return make_string(s);
+}
+
+malval_t prn(mallist_t l) {
+  char *s = malloc(100);
+  int i;
+  for (i = 0; i < l.len; i++) {
+    if (i != 0) {
+      strcat(s, " ");
+    }
+    strcat(s, pr_str(l.items[i], 1));
+  }
+  printf("%s\n", s);
+  return make_nil();
+}
+
+malval_t println(mallist_t l) {
+  char *s = malloc(100);
+  int i;
+  for (i = 0; i < l.len; i++) {
+    if (i != 0) {
+      strcat(s, " ");
+    }
+    strcat(s, pr_str(l.items[i], 0));
+  }
+  printf("%s\n", s);
+  return make_nil();
+}
+
+malval_t list(mallist_t l) {
+  return make_list(l.items, l.len);
+}
+
+malval_t is_list(mallist_t l) {
+  return make_bool(l.items[0].vtype == MAL_LIST);
+}
+
+malval_t is_empty(mallist_t l) {
+  return make_bool(l.items[0].val.list.len == 0);
+}
+
+malval_t count(mallist_t l) {
+  return make_num(l.items[0].val.list.len);
+}
+
+int _equal(malval_t item1, malval_t item2) {
+  if (
+      (item1.vtype == MAL_LIST || item1.vtype == MAL_VECTOR || item1.vtype == MAL_HASHMAP)
+      && (item2.vtype == MAL_LIST || item2.vtype == MAL_VECTOR || item2.vtype == MAL_HASHMAP)
+      ) {
+    int i;
+    if (item1.val.list.len != item2.val.list.len) {
+      return 0;
+    }
+    for (i = 0; i < item1.val.list.len; i++) {
+      if (!_equal(item1.val.list.items[i], item2.val.list.items[i])) {
+        return 0;
+      }
+    }
+    return 1;
+  }
+  if (item1.vtype != item2.vtype) {
+    return 0;
+  }
+  if (item1.vtype == MAL_LIST || item1.vtype == MAL_VECTOR || item1.vtype == MAL_HASHMAP) {
+    int i;
+    if (item1.val.list.len != item2.val.list.len) {
+      return 0;
+    }
+    for (i = 0; i < item1.val.list.len; i++) {
+      if (!_equal(item1.val.list.items[i], item2.val.list.items[i])) {
+        return 0;
+      }
+    }
+    return 1;
+  }
+  if (item1.vtype == MAL_NUMBER){
+    return item1.val.num == item2.val.num;
+    return 0;
+  }
+
+  return strcmp(item1.val.str,item2.val.str) == 0;
+}
+
+malval_t equal(mallist_t l) {
+  return make_bool(_equal(l.items[0], l.items[1]));
+}
+
+malval_t inf(mallist_t l) {
+  return make_bool(l.items[0].val.num < l.items[1].val.num);
+}
+
+malval_t infeq(mallist_t l) {
+  return make_bool(l.items[0].val.num <= l.items[1].val.num);
+}
+
+malval_t sup(mallist_t l) {
+  return make_bool(l.items[0].val.num > l.items[1].val.num);
+}
+
+malval_t supeq(mallist_t l) {
+  return make_bool(l.items[0].val.num >= l.items[1].val.num);
+}
+
 typedef struct EnvItem {
   char *key;
   malval_t val;
   struct EnvItem *next;
+} envitem_t;
+
+typedef struct Env {
+  envitem_t *items;
+  struct Env *outer;
 } env_t;
 
-env_t *create_env() {
+env_t *repl_env() {
   struct Funcs {
     char *key;
     malval_t (*fn)(mallist_t l);
@@ -119,32 +269,51 @@ env_t *create_env() {
     {"-", *sub},
     {"/", *divide},
     {"*", *mult},
+    {"pr-str", *prstr},
+    {"str", *str},
+    {"prn", *prn},
+    {"println", *println},
+    {"list", *list},
+    {"list?", *is_list},
+    {"empty?", *is_empty},
+    {"count", *count},
+    {"=", *equal},
+    {"<", *inf},
+    {"<=", *infeq},
+    {">", *sup},
+    {">=", *supeq},
   };
 
   int i;
   int len = sizeof(funcs) / sizeof(funcs[0]);
 
-  env_t *result = malloc(sizeof (env_t) * len);
-  env_t *cur = result;
+  envitem_t *result = malloc(sizeof (envitem_t));
+  envitem_t *cur = result;
 
   for (i = 0; i <= len; i++) {
     if (i != 0) {
-      cur->next = malloc(sizeof (env_t));
+      cur->next = malloc(sizeof (envitem_t));
       cur = cur->next;
     }
     cur->key = funcs[i].key;
     cur->val = make_fn(funcs[i].fn);
-  };
+  }
+  env_t *env = malloc(sizeof(env_t));
+  env->outer = NULL;
+  env->items = result;
 
-  return result;
+  return env;
 }
 
-malval_t get(char *key, env_t **env_ptr) {
-  env_t *env = *env_ptr;
-  for (; env->next != NULL; env = env->next) {
-    if (strcmp(env->key, key) == 0) {
-      return env->val;
+malval_t get(char *key, env_t *env_ptr) {
+  envitem_t *item = env_ptr->items;
+  for (; item != NULL; item = item->next) {
+    if (strcmp(item->key, key) == 0) {
+      return item->val;
     }
+  }
+  if (env_ptr->outer != NULL) {
+    return get(key, env_ptr->outer);
   }
   char *s = malloc(100);
   strcat(s, key);
@@ -153,19 +322,24 @@ malval_t get(char *key, env_t **env_ptr) {
   return make_error(s);
 }
 
-env_t *set(env_t **env, char *key, malval_t val) {
+void set(env_t *env, char *key, malval_t val) {
   if (val.vtype == MAL_ERROR) {
-    return *env;
+    return;
   }
-  env_t *new_env = malloc(sizeof (env_t));
-  new_env->key = key;
-  new_env->val = val;
-  new_env->next = *env;
-  return new_env;
+  envitem_t *item = malloc(sizeof (envitem_t));
+  item->key = key;
+  item->val = val;
+  item->next = env->items;
+  env->items = item;
 }
 
-malval_t EVAL(malval_t val, env_t **env);
-malval_t eval_ast(malval_t val, env_t **env) {
+env_t *create_env(env_t *outer) {
+  env_t *env = malloc(sizeof (env_t));
+  env->outer = outer;
+}
+
+malval_t EVAL(malval_t val, env_t *env);
+malval_t eval_ast(malval_t val, env_t *env) {
   if (val.vtype == MAL_SYMBOL && val.val.str[0] != ':') {
     return get(val.val.str, env);
   }
@@ -181,7 +355,7 @@ malval_t eval_ast(malval_t val, env_t **env) {
   return val;
 }
 
-malval_t EVAL(malval_t val, env_t **env) {
+malval_t EVAL(malval_t val, env_t *env) {
   if (val.vtype != MAL_LIST) {
     return eval_ast(val, env);
   }
@@ -190,9 +364,10 @@ malval_t EVAL(malval_t val, env_t **env) {
   }
 
   if (val.val.list.items[0].vtype == MAL_SYMBOL) {
+
     if (strcmp(val.val.list.items[0].val.str, "def!") == 0) {
       malval_t evaluated = EVAL(val.val.list.items[2], env);
-      *env = set(env,
+      set(env,
           val.val.list.items[1].val.str,
           evaluated);
       return evaluated;
@@ -200,15 +375,37 @@ malval_t EVAL(malval_t val, env_t **env) {
 
     if (strcmp(val.val.list.items[0].val.str, "let*") == 0) {
       mallist_t bindings = val.val.list.items[1].val.list;
-      env_t *new_env = *env;
+      env_t *new_env = create_env(env);
       int i;
       for (i = 0; i < bindings.len; i += 2) {
-        new_env = set(&new_env,
+        set(new_env,
             bindings.items[i].val.str,
-            EVAL(bindings.items[i + 1], &new_env)
+            EVAL(bindings.items[i + 1], new_env)
         );
       }
-      return EVAL(val.val.list.items[2], &new_env);
+      return EVAL(val.val.list.items[2], new_env);
+    }
+
+
+    if (strcmp(val.val.list.items[0].val.str, "do") == 0) {
+      int i;
+      malval_t result;
+      for (i = 1; i < val.val.list.len; i++) {
+        result = EVAL(val.val.list.items[i], env);
+      }
+      return result;
+    }
+
+    if (strcmp(val.val.list.items[0].val.str, "if") == 0) {
+      malval_t cond = EVAL(val.val.list.items[1], env);
+
+      if (cond.vtype == MAL_NIL || (cond.vtype == MAL_BOOL && strcmp(cond.val.str, "false") == 0)) {
+        if (val.val.list.len >= 4) {
+          return EVAL(val.val.list.items[3], env);
+        }
+        return make_nil();
+      }
+      return EVAL(val.val.list.items[2], env);
     }
   }
 
@@ -226,11 +423,6 @@ malval_t EVAL(malval_t val, env_t **env) {
   new_list.len = new_val.val.list.len -1;
 
   return fn(new_list);
-}
-
-
-char * PRINT(char *s) {
-  return s;
 }
 
 struct Reader {
@@ -389,18 +581,25 @@ malval_t read_atom(struct Reader *reader) {
     return val;
   }
   content.str = token;
-  val.vtype = MAL_SYMBOL;
+  if (strcmp(content.str, "nil") == 0) {
+    val.vtype = MAL_NIL;
+  } else if (strcmp(content.str, "false") == 0 || strcmp(content.str, "true") == 0) {
+    val.vtype = MAL_BOOL;
+  } else {
+    val.vtype = MAL_SYMBOL;
+  }
   val.val = content;
   return val;
 }
 
 char *pr_str(malval_t val, int print_readability) {
   char *s = malloc(100);
+
   if (val.vtype == MAL_NUMBER) {
     sprintf(s, "%d", val.val.num);
     return s;
   }
-  if (val.vtype == MAL_SYMBOL) {
+  if (val.vtype == MAL_SYMBOL || val.vtype == MAL_ERROR || val.vtype == MAL_BOOL || val.vtype == MAL_NIL) {
     return val.val.str;
   }
   if (val.vtype == MAL_LIST) {
@@ -460,9 +659,6 @@ char *pr_str(malval_t val, int print_readability) {
     *(s + j) = '\0';
     return s;
   }
-  if (val.vtype == MAL_ERROR) {
-    return val.val.str;
-  }
   if (val.vtype == MAL_STRING) {
     if (print_readability) {
       int i = 0;
@@ -488,7 +684,7 @@ char *pr_str(malval_t val, int print_readability) {
       s[i++] = '\0';
       return s;
     } else {
-      sprintf(s, "\"%s\"", val.val.str);
+      sprintf(s, "%s", val.val.str);
       return s;
     }
   }
@@ -559,12 +755,12 @@ int main() {
   printf("user> ");
   char s[1000];
   int len;
-  env_t *repl_env = create_env();
+  env_t *env = repl_env();
   while ((len = getLine(s)) > 0) {
     struct Reader reader = read_str(s);
     if (strcmp(reader.tokens[0], "") != 0) {
       malval_t val = read_form(&reader);
-      malval_t evaluated = EVAL(val, &repl_env);
+      malval_t evaluated = EVAL(val, env);
       printf("%s\n", pr_str(evaluated, 1));
     }
     printf("user> ");
