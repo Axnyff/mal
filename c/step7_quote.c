@@ -511,6 +511,44 @@ int is_pair(malval_t a) {
     a.val.list.len != 0;
 }
 
+malval_t quasiquote(malval_t ast) {
+  if (!is_pair(ast)) {
+    malval_t *items = malloc(2 * sizeof(malval_t));
+    items[0] = make_symbol("quote");
+    items[1] = ast;
+    return make_list(items, 2);
+  }
+  if (ast.val.list.items[0].vtype == MAL_SYMBOL &&
+      strcmp(ast.val.list.items[0].val.str, "unquote") == 0) {
+    return ast.val.list.items[1];
+  }
+
+  if (is_pair(ast.val.list.items[0])
+      && ast.val.list.items[0].val.list.items[0].vtype == MAL_SYMBOL 
+      && strcmp(ast.val.list.items[0].val.list.items[0].val.str, "splice-unquote") == 0) {
+    malval_t *items = malloc(100 * sizeof(malval_t));
+    int i;
+    items[0] = make_symbol("concat");
+    items[1] = quasiquote(ast.val.list.items[0].val.list.items[1]);
+    for (i = i; i < ast.val.list.len; i++) {
+      items[i + 1] = quasiquote(ast.val.list.items[i]);
+    }
+    return make_list(items, ast.val.list.len + 2);
+  }
+  {
+    malval_t *items = malloc(100 * sizeof(malval_t));
+    int i;
+    items[0] = make_symbol("cons");
+    items[1] = quasiquote(ast.val.list.items[0]);
+    for (i = i; i < ast.val.list.len; i++) {
+      items[i + 1] = quasiquote(ast.val.list.items[i]);
+    }
+    return make_list(items, ast.val.list.len + 2);
+  }
+
+  return ast;
+}
+
 malval_t EVAL(malval_t val, env_t *env) {
   // THIS IS NECESSARY ( WTF?)
   pr_str(val, 1);
@@ -528,7 +566,8 @@ malval_t EVAL(malval_t val, env_t *env) {
       }
 
       if (strcmp(val.val.list.items[0].val.str, "quasiquote") == 0) {
-        return val.val.list.items[1];
+        val = quasiquote(val.val.list.items[1]);
+        continue;
       }
 
       if (strcmp(val.val.list.items[0].val.str, "def!") == 0) {
