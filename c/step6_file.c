@@ -348,7 +348,7 @@ malval_t swap(mallist_t l, env_t *env) {
 
   malval_t res;
   if (l.items[1].vtype == MAL_CUSTOM_FUNC) {
-    malfn_t custom_fn = l.items[0].val.custom_fn;
+    malfn_t custom_fn = l.items[1].val.custom_fn;
     env_t *new_env = create_env(env);
     for (i = 0; i < custom_fn.params->len; i++) {
       if (strcmp(custom_fn.params->items[i].val.str, "&") == 0) {
