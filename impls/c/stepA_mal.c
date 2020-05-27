@@ -576,7 +576,7 @@ malval_t reverse(mallist_t l) {
 }
 
 malval_t readline(mallist_t l) {
-  char* line = malloc(100);
+  char* line = malloc(1000);
 
   printf("%s", l.items[0].val.str);
   int len;
