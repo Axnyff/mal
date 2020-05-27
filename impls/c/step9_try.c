@@ -54,6 +54,7 @@ typedef union MalValContent {
   malval_t (*fn)(mallist_t l);
   malfn_t custom_fn;
   malval_t *atom;
+  malval_t *error;
 } malcontent_t;
 
 struct MalVal {
@@ -74,6 +75,8 @@ struct Env {
   envitem_t *items;
   struct Env *outer;
 } *repl_env;
+
+malval_t* GLOBAL_ERROR_POINTER = 0;
 
 malval_t make_atom(malval_t *val) {
   malval_t res;
@@ -153,13 +156,15 @@ malval_t make_nil() {
   return res;
 }
 
-malval_t make_error(char *s) {
-  malval_t res;
+malval_t throw_error(malval_t* val) {
   malcontent_t content;
-  res.vtype = MAL_ERROR;
-  content.str = s;
-  res.val = content;
-  return res;
+  content.error = val;
+  malval_t err = {
+    .vtype = MAL_ERROR,
+    .val = content,
+  };
+  GLOBAL_ERROR_POINTER = &err;
+  return *GLOBAL_ERROR_POINTER;
 }
 
 malval_t make_string(char *s) {
@@ -375,7 +380,8 @@ malval_t readstring(mallist_t l) {
 malval_t slurp(mallist_t l) {
   char* s = getFile(l.items[0].val.str);
   if (s == 0) {
-    return make_error("File not found");
+    malval_t err = make_string("NOT FOUND");
+    return throw_error(&err);
   }
   return make_string(getFile(l.items[0].val.str));
 }
@@ -398,7 +404,11 @@ malval_t reset(mallist_t l) {
 }
 
 malval_t eval(mallist_t l) {
-  return EVAL(l.items[0], repl_env);
+  malval_t evaluated = EVAL(l.items[0], repl_env);
+  if (GLOBAL_ERROR_POINTER) {
+    return *GLOBAL_ERROR_POINTER;
+  }
+  return evaluated;
 }
 
 malval_t apply(mallist_t l) {
@@ -432,6 +442,34 @@ malval_t apply(mallist_t l) {
     res = l.items[0].val.fn(make_list(items, nb_arguments).val.list);
   }
   return res;
+}
+
+malval_t map(mallist_t l) {
+  int i;
+  malval_t* items = malloc(l.items[1].val.list.len * sizeof(malval_t));
+
+  if (l.items[0].vtype == MAL_FUNC) {
+    for (i = 0; i < l.items[1].val.list.len; i++) {
+      items[i] = l.items[0].val.fn(make_list(l.items[1].val.list.items + i, 1).val.list);
+    }
+    return make_list(items, i);
+  }
+
+  malfn_t custom_fn = l.items[0].val.custom_fn;
+  for (i = 0; i < l.items[1].val.list.len; i++) {
+    env_t *new_env = create_env(custom_fn.env);
+    for (int j = 0; j < custom_fn.params->len; j++) {
+      if (strcmp(custom_fn.params->items[0].val.str, "&") == 0) {
+        set(new_env, custom_fn.params->items[1].val.str,
+            make_list(l.items[1].val.list.items + i, 1)
+           );
+        break;
+      }
+      set(new_env, custom_fn.params->items[i].val.str, l.items[1].val.list.items[i]);
+    }
+    items[i] = EVAL(*custom_fn.ast, new_env);
+  }
+  return make_list(items, i);
 }
 
 malval_t swap(mallist_t l) {
@@ -494,7 +532,8 @@ malval_t concat(mallist_t l) {
 malval_t nth(mallist_t list) {
   int index = list.items[1].val.num;
   if (index >= list.items[0].val.list.len) {
-    return make_error("OutOfRange");
+    malval_t err = make_string("Outofrange");
+    return throw_error(&err);
   }
   return list.items[0].val.list.items[index];
 }
@@ -662,6 +701,9 @@ malval_t vals(mallist_t list) {
   return make_list(items, len);
 }
 
+malval_t throw(mallist_t list) {
+  return throw_error(list.items);
+}
 
 void gen_repl_env() {
   struct Funcs {
@@ -717,6 +759,8 @@ void gen_repl_env() {
     {"keys", *keys},
     {"vals", *vals},
     {"apply", *apply},
+    {"map", *map},
+    {"throw", *throw},
     {"+", *add}, //FIXME
   };
 
@@ -754,7 +798,8 @@ malval_t get(char *key, env_t *env_ptr) {
   strcat(s, key);
   strcat(s, " not found");
 
-  return make_error(s);
+  malval_t err = make_string(s);
+  return throw_error(&err);
 }
 
 void set(env_t *env, char *key, malval_t val) {
@@ -862,11 +907,17 @@ malval_t macroexpand(malval_t ast, env_t* env) {
     env = new_env;
     ast = EVAL(*custom_fn.ast, env);
   }
+  if (GLOBAL_ERROR_POINTER) {
+    GLOBAL_ERROR_POINTER = 0;
+  }
   return ast;
 }
 
 malval_t EVAL(malval_t val, env_t *env) {
   while (1) {
+    if (GLOBAL_ERROR_POINTER != 0) {
+      return *GLOBAL_ERROR_POINTER;
+    }
     val = macroexpand(val, env);
     if (val.vtype != MAL_LIST) {
       return eval_ast(val, env);
@@ -876,6 +927,18 @@ malval_t EVAL(malval_t val, env_t *env) {
     }
 
     if (val.val.list.items[0].vtype == MAL_SYMBOL) {
+      if (strcmp(val.val.list.items[0].val.str, "try*") == 0) {
+        malval_t evaluated = EVAL(val.val.list.items[1], env);
+        if (evaluated.vtype == MAL_ERROR) {
+          env_t *new_env = create_env(env);
+          set(new_env, val.val.list.items[2].val.list.items[1].val.str,
+              *evaluated.val.error
+          );
+          GLOBAL_ERROR_POINTER = 0;
+          return EVAL(val.val.list.items[2].val.list.items[2], new_env);
+        }
+        return evaluated;
+      }
       if (strcmp(val.val.list.items[0].val.str, "macroexpand") == 0) {
         return macroexpand(val.val.list.items[1], env);
       }
@@ -890,6 +953,9 @@ malval_t EVAL(malval_t val, env_t *env) {
 
       if (strcmp(val.val.list.items[0].val.str, "def!") == 0) {
         malval_t evaluated = EVAL(val.val.list.items[2], env);
+        if (GLOBAL_ERROR_POINTER) {
+          return *GLOBAL_ERROR_POINTER;
+        }
         set(env,
             val.val.list.items[1].val.str,
             evaluated);
@@ -898,6 +964,9 @@ malval_t EVAL(malval_t val, env_t *env) {
 
       if (strcmp(val.val.list.items[0].val.str, "defmacro!") == 0) {
         malval_t evaluated = EVAL(val.val.list.items[2], env);
+        if (GLOBAL_ERROR_POINTER) {
+          return *GLOBAL_ERROR_POINTER;
+        }
         evaluated.vtype = MAL_MACRO;
         set(env,
             val.val.list.items[1].val.str,
@@ -914,7 +983,10 @@ malval_t EVAL(malval_t val, env_t *env) {
               bindings.items[i].val.str,
               EVAL(bindings.items[i + 1], new_env)
              );
-        }
+            if (GLOBAL_ERROR_POINTER) {
+              return *GLOBAL_ERROR_POINTER;
+            }
+            }
         val = val.val.list.items[2];
         env = new_env;
         continue;
@@ -933,6 +1005,9 @@ malval_t EVAL(malval_t val, env_t *env) {
         int i;
         for (i = 1; i < val.val.list.len - 1; i++) {
           EVAL(val.val.list.items[i], env);
+          if (GLOBAL_ERROR_POINTER) {
+            return *GLOBAL_ERROR_POINTER;
+          }
         }
         val = val.val.list.items[i];
         continue;
@@ -940,14 +1015,26 @@ malval_t EVAL(malval_t val, env_t *env) {
 
       if (strcmp(val.val.list.items[0].val.str, "if") == 0) {
         malval_t cond = EVAL(val.val.list.items[1], env);
+        if (GLOBAL_ERROR_POINTER) {
+          return *GLOBAL_ERROR_POINTER;
+        }
 
         if (cond.vtype == MAL_NIL || (cond.vtype == MAL_BOOL && strcmp(cond.val.str, "false") == 0)) {
           if (val.val.list.len >= 4) {
-            return EVAL(val.val.list.items[3], env);
+            malval_t evaluated = EVAL(val.val.list.items[3], env);
+            if (GLOBAL_ERROR_POINTER) {
+              return *GLOBAL_ERROR_POINTER;
+            }
+            return evaluated;
+
           }
           return make_nil();
         }
-        return EVAL(val.val.list.items[2], env);
+        malval_t evaluated = EVAL(val.val.list.items[2], env);
+        if (GLOBAL_ERROR_POINTER) {
+          return *GLOBAL_ERROR_POINTER;
+        }
+        return evaluated;
       }
     }
 
@@ -980,7 +1067,8 @@ malval_t EVAL(malval_t val, env_t *env) {
     if (new_val.val.list.items[0].vtype == MAL_ERROR) {
       return new_val.val.list.items[0];
     }
-    return make_error("NOFN");
+    malval_t err = make_string("NOFN");
+    return throw_error(&err);
   }
 }
 
@@ -1076,7 +1164,8 @@ malval_t read_list_like(struct Reader *reader, int vtype, char end) {
   if (token && token[0] == end) {
     next(reader);
   } else {
-    return make_error("EOF");
+    malval_t err = make_string("EOF");
+    return throw_error(&err);
   }
 
   list.len = i;
@@ -1123,7 +1212,8 @@ malval_t read_atom(struct Reader *reader) {
       s[i++] = *token++;
     }
     if (*token != '"') {
-      return make_error("EOF");
+      malval_t err = make_string("EOF");
+      return throw_error(&err);
     }
     s[i] = '\0';
     return make_string(s);
@@ -1143,10 +1233,19 @@ malval_t read_atom(struct Reader *reader) {
 char *pr_str(malval_t val, int print_readability) {
   char *s = malloc(1000);
 
+  printf("%d\n", val.vtype);
   if (val.vtype == MAL_NUMBER) {
     sprintf(s, "%d", val.val.num);
     return s;
   }
+
+  if (val.vtype == MAL_ERROR) {
+    strcat(s, "Error: ");
+
+    strcat(s, pr_str(*val.val.error, print_readability));
+    return s;
+  }
+
   if (val.vtype == MAL_SYMBOL || val.vtype == MAL_ERROR || val.vtype == MAL_BOOL || val.vtype == MAL_NIL) {
     return val.val.str;
   }
@@ -1338,14 +1437,18 @@ int main(int argc, char* argv[]) {
   char s[1000] = "";
 
   gen_repl_env();
-  malval_t val = read_str("(def! not (fn* (a) (if a false true)))");
-  EVAL(val, repl_env);
+
+  malval_t val;
 
   val = read_str("(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\nnil)\")))))");
   EVAL(val, repl_env);
 
+  val = read_str("(def! not (fn* (a) (if a false true)))");
+  EVAL(val, repl_env);
+
   val = read_str("(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))");
   EVAL(val, repl_env);
+
   if (argc > 1) {
     argc -= 2;
     argv++;
@@ -1373,6 +1476,7 @@ int main(int argc, char* argv[]) {
       malval_t val = read_form(&reader);
       malval_t evaluated = EVAL(val, repl_env);
       printf("%s\n", pr_str(evaluated, 1));
+      GLOBAL_ERROR_POINTER = 0;
     }
     printf("user> ");
   }
