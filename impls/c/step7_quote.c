@@ -396,7 +396,7 @@ malval_t cons(mallist_t l) {
 
   *items = l.items[0];
   for (i = 0; i <= old.len; i++) {
-    *(items + i + 1) = old.items[i];
+    *(items + i + 1) = *(old.items + i);
   }
   return make_list(items, old.len + 1);
 }
@@ -406,7 +406,7 @@ malval_t concat(mallist_t l) {
   int i, j, k = 0;
   for (i = 0; i < l.len; i++) {
     for (j = 0; j < l.items[i].val.list.len; j++) {
-      *(items + k++) = l.items[i].val.list.items[j];
+      *(items + k++) = *(l.items[i].val.list.items + j);
     }
   }
 
@@ -538,7 +538,7 @@ malval_t quasiquote(malval_t ast) {
       && match_symbol(ast.val.list.items[0].val.list.items[0], "splice-unquote")) {
     malval_t *items = malloc(100 * sizeof(malval_t));
     items[0] = make_symbol("concat");
-    items[1] = quasiquote(ast.val.list.items[0].val.list.items[1]);
+    items[1] = ast.val.list.items[0].val.list.items[1];
 
     malval_t *items2 = malloc(100 * sizeof(malval_t));
     for (int i = 0; i < ast.val.list.len - 1; i++) {
@@ -560,7 +560,7 @@ malval_t quasiquote(malval_t ast) {
   }
 
   items[2] = quasiquote(make_list(items2, ast.val.list.len - 1));
-  return make_list(items, 4);
+  return make_list(items, 3);
 }
 
 malval_t EVAL(malval_t val, env_t *env) {
