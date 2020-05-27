@@ -99,24 +99,26 @@ malval_t make_list(malval_t *items, int len) {
   return make_list_like(items, len, MAL_LIST);
 }
 malval_t make_fn(malval_t (*fn)(mallist_t l)) {
-  malval_t res;
-  malcontent_t content;
-  res.vtype = MAL_FUNC;
-  content.fn = fn;
-  res.val = content;
+  malval_t res = {
+    .vtype = MAL_FUNC,
+    .val = { 
+      .fn = fn
+    }
+  };
   return res;
 }
 
 malval_t make_custom_fn(malval_t *ast, mallist_t *params, env_t *env) {
-  malval_t res;
-  malcontent_t content;
-  malfn_t fn;
-  fn.ast = ast;
-  fn.params = params;
-  fn.env = env;
-  res.vtype = MAL_CUSTOM_FUNC;
-  content.custom_fn = fn;
-  res.val = content;
+  malval_t res = {
+    .vtype = MAL_CUSTOM_FUNC,
+    .val = {
+      .custom_fn = {
+        .ast = ast,
+        .params = params,
+        .env= env
+      }
+    }
+  };
   return res;
 }
 
@@ -322,6 +324,10 @@ malval_t readstring(mallist_t l) {
 }
 
 malval_t slurp(mallist_t l) {
+  char* s = getFile(l.items[0].val.str);
+  if (s == 0) {
+    return make_error("File not found");
+  }
   return make_string(getFile(l.items[0].val.str));
 }
 
@@ -403,7 +409,7 @@ malval_t concat(mallist_t l) {
   return make_list(items, k);
 }
 
-void gen_repl_env(malval_t argv) {
+void gen_repl_env() {
   struct Funcs {
     char *key;
     malval_t (*fn)(mallist_t l);
@@ -455,10 +461,6 @@ void gen_repl_env(malval_t argv) {
     cur->key = funcs[i].key;
     cur->val = make_fn(funcs[i].fn);
   }
-  cur->next = malloc(sizeof (envitem_t));
-  cur = cur->next;
-  cur->key = "*ARGV*";
-  cur->val = argv;
   repl_env->outer = NULL;
   repl_env->items = result;
 }
@@ -642,7 +644,7 @@ malval_t EVAL(malval_t val, env_t *env) {
     }
     if (new_val.val.list.items[0].vtype == MAL_CUSTOM_FUNC) {
       malfn_t custom_fn = new_val.val.list.items[0].val.custom_fn;
-      env_t *new_env = create_env(env);
+      env_t *new_env = create_env(custom_fn.env);
       int i = 0;
       for (i = 0; i < custom_fn.params->len; i++) {
         if (strcmp(custom_fn.params->items[i].val.str, "&") == 0) {
@@ -925,7 +927,6 @@ char *pr_str(malval_t val, int print_readability) {
     sprintf(s, "(atom %s)", atom_content);
     return s;
   }
-  printf("%d\n", val.vtype);
   return "WTF";
 }
 
@@ -986,27 +987,39 @@ malval_t read_form(struct Reader *reader) {
   return read_atom(reader);
 }
 
-
 int getLine(char *s);
 
 int main(int argc, char* argv[]) {
-  printf("user> ");
   char s[1000] = "";
 
-  int len = argc - 1;
-  malval_t* items = malloc(len * sizeof(malval_t));
-
-  for (int i = 0; i < len; i++) {
-    items[i] = make_string(argv[i + 1]);
-  }
-  gen_repl_env(make_list(items, len));
-
+  gen_repl_env();
   malval_t val = read_str("(def! not (fn* (a) (if a false true)))");
   EVAL(val, repl_env);
 
   val = read_str("(def! load-file (fn* (f) (eval (read-string (str \"(do \" (slurp f) \"\nnil)\")))))");
   EVAL(val, repl_env);
 
+  if (argc > 1) {
+    argc -= 2;
+    argv++;
+    char* filename = *argv++;
+    malval_t* items = malloc(argc * sizeof(malval_t));
+    for (int i = 0; i < argc; i++) {
+      items[i] = make_string(*argv++);
+    }
+    set(repl_env, "*ARGV*", make_list(items, argc));
+
+    strcat(s, "(load-file \"");
+    strcat(s, filename);
+    strcat(s, "\")");
+    val = read_str(s);
+    EVAL(val, repl_env);
+    return 1;
+  }
+
+
+  set(repl_env, "*ARGV*", make_list(0, 0));
+  printf("user> ");
   while ((getLine(s)) > 0) {
     struct Reader reader = tokenize(s);
     if (reader.tokens[0] && strcmp(reader.tokens[0], "") != 0) {
@@ -1016,6 +1029,7 @@ int main(int argc, char* argv[]) {
     }
     printf("user> ");
   }
+  return 1;
 }
 
 int getLine(char *s) {
@@ -1035,17 +1049,16 @@ int getLine(char *s) {
 
 char *getFile(char *filename) {
   FILE* fp = fopen(filename, "r");
-  fseek(fp, 0L, SEEK_END);
-  int size = ftell(fp);
-  rewind(fp);
-
-  char* s = malloc(size + 1);
   int c;
   int i = 0;
   if (fp == 0) {
-    *s = '\0';
-    return s;
+    return 0;
   }
+  fseek(fp, 0L, SEEK_END);
+  int size = ftell(fp);
+  char* s = malloc(size + 1);
+  rewind(fp);
+
   while ((c = fgetc(fp)) && c != EOF) {
     *(s + i++) = c;
   }
