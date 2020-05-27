@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <time.h>
 
 #define MAL_LIST 1
 #define MAL_VECTOR 2
@@ -433,6 +434,9 @@ malval_t apply(mallist_t l) {
     items[i] = l.items[i + 1];
   }
 
+  if (GLOBAL_ERROR_POINTER) {
+    return *GLOBAL_ERROR_POINTER;
+  }
   for (int j = 0; j < l.items[l.len - 1].val.list.len; j++, i++) {
     items[i] = l.items[l.len - 1].val.list.items[j];
   }
@@ -453,6 +457,9 @@ malval_t apply(mallist_t l) {
     res = EVAL(*custom_fn.ast, new_env);
   } else {
     res = l.items[0].val.fn(make_list(items, nb_arguments).val.list);
+  }
+  if (GLOBAL_ERROR_POINTER) {
+    return *GLOBAL_ERROR_POINTER;
   }
   return res;
 }
@@ -611,6 +618,26 @@ malval_t is_keyword(mallist_t list) {
   return make_bool(list.items[0].vtype == MAL_SYMBOL && list.items[0].val.str[0] == ':');
 }
 
+malval_t is_string(mallist_t list) {
+  return make_bool(list.items[0].vtype == MAL_STRING);
+}
+
+malval_t is_number(mallist_t list) {
+  return make_bool(list.items[0].vtype == MAL_NUMBER);
+}
+
+malval_t is_fn(mallist_t list) {
+  return make_bool(list.items[0].vtype == MAL_FUNC || list.items[0].vtype == MAL_CUSTOM_FUNC);
+}
+
+malval_t is_macro(mallist_t list) {
+  return make_bool(list.items[0].vtype == MAL_MACRO);
+}
+
+malval_t time_ms(mallist_t list) {
+  return make_num(1000 * time(0));
+}
+
 malval_t symbol(mallist_t list) {
   return make_symbol(list.items[0].val.str);
 }
@@ -737,13 +764,13 @@ malval_t meta(mallist_t list) {
   if (list.items[0].meta != 0) {
     return *list.items[0].meta;
   }
+  printf("no meta\n");
   return make_nil();
 }
 
 malval_t with_meta(mallist_t list) {
-  list.items[0].meta = list.items[1];
-  *list.items[0].meta = list.items[1];
-  return list.items[1];
+  list.items[0].meta = list.items + 1;
+  return list.items[0];
 }
 
 void gen_repl_env() {
@@ -804,6 +831,11 @@ void gen_repl_env() {
     {"throw", *throw},
     {"meta", *meta},
     {"with-meta", *with_meta},
+    {"string?", *is_string},
+    {"number?", *is_number},
+    {"macro?", *is_macro},
+    {"fn?", *is_fn},
+    {"time-ms", *time_ms},
     {"+", *add}, //FIXME
   };
 
@@ -830,9 +862,6 @@ void gen_repl_env() {
 malval_t get(char *key, env_t *env_ptr) {
   envitem_t *item = env_ptr->items;
   for (; item != NULL; item = item->next) {
-    if (item->key == 0) {
-      printf("WHAT");
-    }
     if (item->key && strcmp(item->key, key) == 0) {
       return item->val;
     }
