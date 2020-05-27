@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 
 #define MAL_LIST 1
 #define MAL_VECTOR 2
@@ -118,15 +118,13 @@ malval_t make_fn(malval_t (*fn)(mallist_t l)) {
 }
 
 malval_t make_custom_fn(malval_t *ast, mallist_t *params, env_t *env) {
-  env_t * new_env = malloc(sizeof(env_t));
-  *new_env = *env;
   malval_t res = {
     .vtype = MAL_CUSTOM_FUNC,
     .val = {
       .custom_fn = {
         .ast = ast,
         .params = params,
-        .env = new_env
+        .env = env
       }
     },
     .meta = 0,
@@ -657,7 +655,14 @@ malval_t is_macro(mallist_t list) {
 }
 
 malval_t time_ms(mallist_t list) {
-  return make_num(1000 * time(0));
+  struct timeval tv;
+
+  gettimeofday(&tv, NULL);
+
+  int millisecondsSinceEpoch =
+      tv.tv_sec * 1000 +
+      tv.tv_usec / 1000;
+  return make_num(millisecondsSinceEpoch);
 }
 
 malval_t symbol(mallist_t list) {
