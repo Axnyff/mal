@@ -568,7 +568,6 @@ malval_t quasiquote(malval_t ast) {
 }
 
 malval_t EVAL(malval_t val, env_t *env) {
-  pr_str(val, 1);
   while (1) {
     if (val.vtype != MAL_LIST) {
       return eval_ast(val, env);

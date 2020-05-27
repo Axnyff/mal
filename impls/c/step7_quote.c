@@ -445,6 +445,7 @@ void gen_repl_env() {
     {"swap!", *swap},
     {"cons", *cons},
     {"concat", *concat},
+    {"concat", *concat}, //FIXME
   };
 
   int i;
@@ -454,16 +455,14 @@ void gen_repl_env() {
   envitem_t *result = malloc(sizeof (envitem_t));
   envitem_t *cur = result;
 
-  repl_env->outer = NULL;
-  repl_env->items = result;
-
-  for (i = 0; i <= len; i++) {
+  for (i = 0; i < len; i++) {
     if (i != 0) {
       cur->next = malloc(sizeof (envitem_t));
       cur = cur->next;
     }
     cur->key = funcs[i].key;
     cur->val = make_fn(funcs[i].fn);
+    cur->next = NULL;
   }
   repl_env->outer = NULL;
   repl_env->items = result;
@@ -526,7 +525,7 @@ int is_pair(malval_t a) {
 
 malval_t quasiquote(malval_t ast) {
   if (!is_pair(ast)) {
-    malval_t *items = malloc(2 * sizeof(malval_t));
+    malval_t *items = malloc(10 * sizeof(malval_t));
     items[0] = make_symbol("quote");
     items[1] = ast;
     return make_list(items, 2);
@@ -537,7 +536,7 @@ malval_t quasiquote(malval_t ast) {
 
   if (is_pair(ast.val.list.items[0])
       && match_symbol(ast.val.list.items[0].val.list.items[0], "splice-unquote")) {
-    malval_t *items = malloc(3 * sizeof(malval_t));
+    malval_t *items = malloc(100 * sizeof(malval_t));
     items[0] = make_symbol("concat");
     items[1] = quasiquote(ast.val.list.items[0].val.list.items[1]);
 
@@ -549,26 +548,22 @@ malval_t quasiquote(malval_t ast) {
     items[2] = quasiquote(make_list(items2, ast.val.list.len - 1));
     return make_list(items, 3);
   }
-  {
-    malval_t *items = malloc(3 * sizeof(malval_t));
-    items[0] = make_symbol("cons");
-    items[1] = quasiquote(ast.val.list.items[0]);
+
+  malval_t *items = malloc(100 * sizeof(malval_t));
+  items[0] = make_symbol("cons");
+  items[1] = quasiquote(ast.val.list.items[0]);
 
 
-    malval_t *items2 = malloc(100 * sizeof(malval_t));
-    for (int i = 0; i < ast.val.list.len; i++) {
-      items2[i] = ast.val.list.items[i + 1];
-    }
-
-    items[2] = make_list(items2, ast.val.list.len - 1);
-    return make_list(items, 3);
+  malval_t *items2 = malloc(100 * sizeof(malval_t));
+  for (int i = 0; i < ast.val.list.len - 1; i++) {
+    items2[i] = ast.val.list.items[i + 1];
   }
 
-  return ast;
+  items[2] = quasiquote(make_list(items2, ast.val.list.len - 1));
+  return make_list(items, 4);
 }
 
 malval_t EVAL(malval_t val, env_t *env) {
-  pr_str(val, 1);
   while (1) {
     if (val.vtype != MAL_LIST) {
       return eval_ast(val, env);
