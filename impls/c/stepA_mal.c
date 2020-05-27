@@ -16,7 +16,6 @@
 #define MAL_CUSTOM_FUNC 10
 #define MAL_MACRO 11
 #define MAL_ATOM 12
-#define MAL_ERROR -1
 
 typedef struct MalVal malval_t;
 typedef struct Env env_t;
@@ -167,15 +166,8 @@ malval_t make_nil() {
 }
 
 malval_t throw_error(malval_t* val) {
-  malcontent_t content;
-  content.error = val;
-  malval_t err = {
-    .vtype = MAL_ERROR,
-    .val = content,
-    .meta = 0,
-  };
-  GLOBAL_ERROR_POINTER = &err;
-  return *GLOBAL_ERROR_POINTER;
+  GLOBAL_ERROR_POINTER = val;
+  return make_nil();
 }
 
 malval_t make_string(char *s) {
@@ -421,7 +413,7 @@ malval_t reset(mallist_t l) {
 malval_t eval(mallist_t l) {
   malval_t evaluated = EVAL(l.items[0], repl_env);
   if (GLOBAL_ERROR_POINTER) {
-    return *GLOBAL_ERROR_POINTER;
+    return make_nil();
   }
   return evaluated;
 }
@@ -436,7 +428,7 @@ malval_t apply(mallist_t l) {
   }
 
   if (GLOBAL_ERROR_POINTER) {
-    return *GLOBAL_ERROR_POINTER;
+    return make_nil();
   }
   for (int j = 0; j < l.items[l.len - 1].val.list.len; j++, i++) {
     items[i] = l.items[l.len - 1].val.list.items[j];
@@ -460,7 +452,7 @@ malval_t apply(mallist_t l) {
     res = l.items[0].val.fn(make_list(items, nb_arguments).val.list);
   }
   if (GLOBAL_ERROR_POINTER) {
-    return *GLOBAL_ERROR_POINTER;
+    return make_nil();
   }
   return res;
 }
@@ -473,7 +465,7 @@ malval_t map(mallist_t l) {
     for (i = 0; i < l.items[1].val.list.len; i++) {
       items[i] = l.items[0].val.fn(make_list(l.items[1].val.list.items + i, 1).val.list);
       if (GLOBAL_ERROR_POINTER) {
-        return *GLOBAL_ERROR_POINTER;
+        return make_nil();
       }
     }
     return make_list(items, i);
@@ -501,7 +493,7 @@ malval_t map(mallist_t l) {
     items[i] = EVAL(*custom_fn.ast, new_env);
   }
   if (GLOBAL_ERROR_POINTER) {
-    return *GLOBAL_ERROR_POINTER;
+    return make_nil();
   }
   return make_list(items, i);
 }
@@ -943,7 +935,7 @@ malval_t get(char *key, env_t *env_ptr) {
 }
 
 void set(env_t *env, char *key, malval_t val) {
-  if (val.vtype == MAL_ERROR) {
+  if (GLOBAL_ERROR_POINTER) {
     return;
   }
   envitem_t *item = malloc(sizeof (envitem_t));
@@ -1058,7 +1050,7 @@ malval_t macroexpand(malval_t ast, env_t* env) {
 malval_t EVAL(malval_t val, env_t *env) {
   while (1) {
     if (GLOBAL_ERROR_POINTER != 0) {
-      return *GLOBAL_ERROR_POINTER;
+      return make_nil();
     }
     val = macroexpand(val, env);
     if (val.vtype != MAL_LIST) {
@@ -1071,12 +1063,13 @@ malval_t EVAL(malval_t val, env_t *env) {
     if (val.val.list.items[0].vtype == MAL_SYMBOL) {
       if (strcmp(val.val.list.items[0].val.str, "try*") == 0) {
         malval_t evaluated = EVAL(val.val.list.items[1], env);
-        if (evaluated.vtype == MAL_ERROR && val.val.list.len > 2) {
+        if (GLOBAL_ERROR_POINTER && val.val.list.len > 2) {
           env_t *new_env = create_env(env);
-          set(new_env, val.val.list.items[2].val.list.items[1].val.str,
-              *GLOBAL_ERROR_POINTER->val.error
-          );
+          malval_t error = *GLOBAL_ERROR_POINTER->val.error;
           GLOBAL_ERROR_POINTER = 0;
+          set(new_env, val.val.list.items[2].val.list.items[1].val.str,
+              error
+          );
           return EVAL(val.val.list.items[2].val.list.items[2], new_env);
         }
         return evaluated;
@@ -1096,7 +1089,7 @@ malval_t EVAL(malval_t val, env_t *env) {
       if (strcmp(val.val.list.items[0].val.str, "def!") == 0) {
         malval_t evaluated = EVAL(val.val.list.items[2], env);
         if (GLOBAL_ERROR_POINTER) {
-          return *GLOBAL_ERROR_POINTER;
+          return make_nil();
         }
         set(env,
             val.val.list.items[1].val.str,
@@ -1107,7 +1100,7 @@ malval_t EVAL(malval_t val, env_t *env) {
       if (strcmp(val.val.list.items[0].val.str, "defmacro!") == 0) {
         malval_t evaluated = EVAL(val.val.list.items[2], env);
         if (GLOBAL_ERROR_POINTER) {
-          return *GLOBAL_ERROR_POINTER;
+          return make_nil();
         }
         evaluated.vtype = MAL_MACRO;
         set(env,
@@ -1126,7 +1119,7 @@ malval_t EVAL(malval_t val, env_t *env) {
               EVAL(bindings.items[i + 1], new_env)
              );
             if (GLOBAL_ERROR_POINTER) {
-              return *GLOBAL_ERROR_POINTER;
+              return make_nil();
             }
             }
         val = val.val.list.items[2];
@@ -1148,7 +1141,7 @@ malval_t EVAL(malval_t val, env_t *env) {
         for (i = 1; i < val.val.list.len - 1; i++) {
           EVAL(val.val.list.items[i], env);
           if (GLOBAL_ERROR_POINTER) {
-            return *GLOBAL_ERROR_POINTER;
+            return make_nil();
           }
         }
         val = val.val.list.items[i];
@@ -1158,14 +1151,14 @@ malval_t EVAL(malval_t val, env_t *env) {
       if (strcmp(val.val.list.items[0].val.str, "if") == 0) {
         malval_t cond = EVAL(val.val.list.items[1], env);
         if (GLOBAL_ERROR_POINTER) {
-          return *GLOBAL_ERROR_POINTER;
+          return make_nil();
         }
 
         if (cond.vtype == MAL_NIL || (cond.vtype == MAL_BOOL && strcmp(cond.val.str, "false") == 0)) {
           if (val.val.list.len >= 4) {
             malval_t evaluated = EVAL(val.val.list.items[3], env);
             if (GLOBAL_ERROR_POINTER) {
-              return *GLOBAL_ERROR_POINTER;
+              return make_nil();
             }
             return evaluated;
 
@@ -1174,7 +1167,7 @@ malval_t EVAL(malval_t val, env_t *env) {
         }
         malval_t evaluated = EVAL(val.val.list.items[2], env);
         if (GLOBAL_ERROR_POINTER) {
-          return *GLOBAL_ERROR_POINTER;
+          return make_nil();
         }
         return evaluated;
       }
@@ -1206,8 +1199,8 @@ malval_t EVAL(malval_t val, env_t *env) {
       env = new_env;
       continue;
     }
-    if (new_val.val.list.items[0].vtype == MAL_ERROR) {
-      return new_val.val.list.items[0];
+    if (GLOBAL_ERROR_POINTER) {
+      return make_nil();
     }
     malval_t err = make_string("NOFN");
     return throw_error(&err);
@@ -1380,14 +1373,16 @@ char *pr_str(malval_t val, int print_readability) {
     return s;
   }
 
-  if (val.vtype == MAL_ERROR) {
+  if (GLOBAL_ERROR_POINTER) {
+    malval_t temp = *GLOBAL_ERROR_POINTER;
+    GLOBAL_ERROR_POINTER = 0;
     strcat(s, "Error: ");
 
-    strcat(s, pr_str(*val.val.error, print_readability));
+    strcat(s, pr_str(temp, print_readability));
     return s;
   }
 
-  if (val.vtype == MAL_SYMBOL || val.vtype == MAL_ERROR || val.vtype == MAL_BOOL || val.vtype == MAL_NIL) {
+  if (val.vtype == MAL_SYMBOL || val.vtype == MAL_BOOL || val.vtype == MAL_NIL) {
     return val.val.str;
   }
   if (val.vtype == MAL_LIST) {
@@ -1612,6 +1607,7 @@ int main(int argc, char* argv[]) {
   }
 
 
+  set(repl_env, "*host-language*", make_string("C"));
   set(repl_env, "*ARGV*", make_list(0, 0));
   printf("user> ");
   while ((getLine(s)) > 0) {
