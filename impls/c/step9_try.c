@@ -448,7 +448,6 @@ malval_t map(mallist_t l) {
   int i;
   malval_t* items = malloc(l.items[1].val.list.len * sizeof(malval_t));
 
-  return make_list(0, 0);
   if (l.items[0].vtype == MAL_FUNC) {
     for (i = 0; i < l.items[1].val.list.len; i++) {
       items[i] = l.items[0].val.fn(make_list(l.items[1].val.list.items + i, 1).val.list);
@@ -472,6 +471,9 @@ malval_t map(mallist_t l) {
       set(new_env, custom_fn.params->items[i].val.str, l.items[1].val.list.items[i]);
     }
     items[i] = EVAL(*custom_fn.ast, new_env);
+  }
+  if (GLOBAL_ERROR_POINTER) {
+    return *GLOBAL_ERROR_POINTER;
   }
   return make_list(items, i);
 }
@@ -498,7 +500,9 @@ malval_t swap(mallist_t l) {
            );
         break;
       }
-      set(new_env, custom_fn.params->items[i].val.str, list.items[i + 0]);
+      char* s = malloc(100);
+      *s = *custom_fn.params->items[i].val.str;
+      set(new_env, s, list.items[i + 0]);
     }
     res = EVAL(*custom_fn.ast, new_env);
   } else {
@@ -791,7 +795,7 @@ void gen_repl_env() {
 malval_t get(char *key, env_t *env_ptr) {
   envitem_t *item = env_ptr->items;
   for (; item != NULL; item = item->next) {
-    if (strcmp(item->key, key) == 0) {
+    if (item->key && strcmp(item->key, key) == 0) {
       return item->val;
     }
   }
