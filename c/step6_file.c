@@ -379,7 +379,31 @@ malval_t swap(mallist_t l) {
   return res;
 }
 
-void gen_repl_env() {
+malval_t cons(mallist_t l) {
+  malval_t *items = malloc(100 * sizeof(malval_t));
+  int i;
+  mallist_t old = l.items[1].val.list;
+
+  *items = l.items[0];
+  for (i = 0; i <= old.len; i++) {
+    *(items + i + 1) = old.items[i];
+  }
+  return make_list(items, old.len + 1);
+}
+
+malval_t concat(mallist_t l) {
+  malval_t *items = malloc(100 * sizeof(malval_t));
+  int i, j, k = 0;
+  for (i = 0; i < l.len; i++) {
+    for (j = 0; j < l.items[i].val.list.len; j++) {
+      *(items + k++) = l.items[i].val.list.items[j];
+    }
+  }
+
+  return make_list(items, k);
+}
+
+void gen_repl_env(malval_t argv) {
   struct Funcs {
     char *key;
     malval_t (*fn)(mallist_t l);
@@ -409,6 +433,8 @@ void gen_repl_env() {
     {"deref", *deref},
     {"reset!", *reset},
     {"swap!", *swap},
+    {"cons", *cons},
+    {"concat", *concat},
   };
 
   int i;
@@ -418,6 +444,9 @@ void gen_repl_env() {
   envitem_t *result = malloc(sizeof (envitem_t));
   envitem_t *cur = result;
 
+  repl_env->outer = NULL;
+  repl_env->items = result;
+
   for (i = 0; i <= len; i++) {
     if (i != 0) {
       cur->next = malloc(sizeof (envitem_t));
@@ -426,6 +455,10 @@ void gen_repl_env() {
     cur->key = funcs[i].key;
     cur->val = make_fn(funcs[i].fn);
   }
+  cur->next = malloc(sizeof (envitem_t));
+  cur = cur->next;
+  cur->key = "*ARGV*";
+  cur->val = argv;
   repl_env->outer = NULL;
   repl_env->items = result;
 }
@@ -480,6 +513,49 @@ malval_t eval_ast(malval_t val, env_t *env) {
   return val;
 }
 
+int is_pair(malval_t a) {
+  return (a.vtype == MAL_LIST || a.vtype == MAL_VECTOR) &&
+    a.val.list.len != 0;
+}
+
+malval_t quasiquote(malval_t ast) {
+  if (!is_pair(ast)) {
+    malval_t *items = malloc(2 * sizeof(malval_t));
+    items[0] = make_symbol("quote");
+    items[1] = ast;
+    return make_list(items, 2);
+  }
+  if (ast.val.list.items[0].vtype == MAL_SYMBOL &&
+      strcmp(ast.val.list.items[0].val.str, "unquote") == 0) {
+    return ast.val.list.items[1];
+  }
+
+  if (is_pair(ast.val.list.items[0])
+      && ast.val.list.items[0].val.list.items[0].vtype == MAL_SYMBOL 
+      && strcmp(ast.val.list.items[0].val.list.items[0].val.str, "splice-unquote") == 0) {
+    malval_t *items = malloc(100 * sizeof(malval_t));
+    int i;
+    items[0] = make_symbol("concat");
+    items[1] = quasiquote(ast.val.list.items[0].val.list.items[1]);
+    for (i = 0; i < ast.val.list.len; i++) {
+      items[i + 1] = quasiquote(ast.val.list.items[i]);
+    }
+    return make_list(items, ast.val.list.len + 2);
+  }
+  {
+    malval_t *items = malloc(100 * sizeof(malval_t));
+    int i;
+    items[0] = make_symbol("cons");
+    items[1] = quasiquote(ast.val.list.items[0]);
+    for (i = 0; i < ast.val.list.len; i++) {
+      items[i + 1] = quasiquote(ast.val.list.items[i]);
+    }
+    return make_list(items, ast.val.list.len + 2);
+  }
+
+  return ast;
+}
+
 malval_t EVAL(malval_t val, env_t *env) {
   // THIS IS NECESSARY ( WTF?)
   pr_str(val, 1);
@@ -492,6 +568,14 @@ malval_t EVAL(malval_t val, env_t *env) {
     }
 
     if (val.val.list.items[0].vtype == MAL_SYMBOL) {
+      if (strcmp(val.val.list.items[0].val.str, "quote") == 0) {
+        return val.val.list.items[1];
+      }
+
+      if (strcmp(val.val.list.items[0].val.str, "quasiquote") == 0) {
+        val = quasiquote(val.val.list.items[1]);
+        continue;
+      }
 
       if (strcmp(val.val.list.items[0].val.str, "def!") == 0) {
         malval_t evaluated = EVAL(val.val.list.items[2], env);
@@ -581,7 +665,7 @@ malval_t EVAL(malval_t val, env_t *env) {
   }
 }
 
-struct Reader tokenize(char *s) {
+struct Reader tokenize(char s[]) {
   struct Reader reader;
   char** tokens = malloc(sizeof(char *) * 100000);
   int i = 0;
@@ -611,6 +695,9 @@ struct Reader tokenize(char *s) {
       for (; *s && *s != '"'; s++) {
         token[j++] = *s;
         if (*s == '\\' && *(s +1) == '"') {
+          token[j++] = *(s+1);
+          s++;
+        } else if (*s == '\\' && *(s +1) == '\\') {
           token[j++] = *(s+1);
           s++;
         }
@@ -643,7 +730,7 @@ struct Reader tokenize(char *s) {
   return reader;
 }
 
-malval_t read_str(char *s) {
+malval_t read_str(char s[]) {
   struct Reader reader = tokenize(s);
   return read_form(&reader);
 }
@@ -683,13 +770,8 @@ malval_t read_list_like(struct Reader *reader, int vtype, char end) {
 
 malval_t read_atom(struct Reader *reader) {
   char* token = next(reader);
-  malval_t val;
-  malcontent_t content;
   if ((token[0] >= '0' && token[0] <= '9') || (token[0] == '-' && token[1] >= '0' && token[1] <= '9')) {
-    content.num = atoi(token);
-    val.vtype = MAL_NUMBER;
-    val.val = content;
-    return val;
+    return make_num(atoi(token));
   }
   if (token[0] == '"') {
     char *s = malloc(1000);
@@ -725,25 +807,22 @@ malval_t read_atom(struct Reader *reader) {
       return make_error("EOF");
     }
     s[i] = '\0';
-    val.vtype = MAL_STRING;
-    content.str = s;
-    val.val = content;
-    return val;
+    return make_string(s);
   }
-  content.str = token;
-  if (strcmp(content.str, "nil") == 0) {
-    val.vtype = MAL_NIL;
-  } else if (strcmp(content.str, "false") == 0 || strcmp(content.str, "true") == 0) {
-    val.vtype = MAL_BOOL;
-  } else {
-    val.vtype = MAL_SYMBOL;
+
+  if (strcmp(token, "nil") == 0) {
+    return make_nil();
   }
-  val.val = content;
-  return val;
+
+  if (strcmp(token, "false") == 0 || strcmp(token, "true") == 0) {
+    return make_bool(strcmp(token, "false") != 0);
+  }
+
+  return make_symbol(token);
 }
 
 char *pr_str(malval_t val, int print_readability) {
-  char *s = malloc(100);
+  char *s = malloc(1000);
 
   if (val.vtype == MAL_NUMBER) {
     sprintf(s, "%d", val.val.num);
@@ -910,10 +989,17 @@ malval_t read_form(struct Reader *reader) {
 
 int getLine(char *s);
 
-int main() {
+int main(int argc, char* argv[]) {
   printf("user> ");
-  char s[1000];
-  gen_repl_env();
+  char s[1000] = "";
+
+  int len = argc - 1;
+  malval_t* items = malloc(len * sizeof(malval_t));
+
+  for (int i = 0; i < len; i++) {
+    items[i] = make_string(argv[i + 1]);
+  }
+  gen_repl_env(make_list(items, len));
 
   malval_t val = read_str("(def! not (fn* (a) (if a false true)))");
   EVAL(val, repl_env);
@@ -948,18 +1034,20 @@ int getLine(char *s) {
 }
 
 char *getFile(char *filename) {
-  FILE *fp = fopen(filename, "r");
+  FILE* fp = fopen(filename, "r");
+  fseek(fp, 0L, SEEK_END);
+  int size = ftell(fp);
+  rewind(fp);
 
-  int max = 100000000;
-  char *s = malloc(max);
+  char* s = malloc(size + 1);
   int c;
   int i = 0;
+  if (fp == 0) {
+    *s = '\0';
+    return s;
+  }
   while ((c = fgetc(fp)) && c != EOF) {
     *(s + i++) = c;
-    if (i == max -1) {
-      max = max + max;
-      s = realloc(s, max);
-    }
   }
   *(s + i) = '\0';
   fclose(fp);
