@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <sys/time.h>
 
 #define MAL_LIST 1
 #define MAL_VECTOR 2
@@ -60,6 +61,7 @@ typedef union MalValContent {
 struct MalVal {
   int vtype;
   malcontent_t val;
+  malval_t *meta;
 };
 
 
@@ -84,11 +86,13 @@ malval_t make_atom(malval_t *val) {
   res.vtype = MAL_ATOM;
   content.atom = val;
   res.val = content;
+  res.meta = 0;
   return res;
 }
 
 malval_t make_list_like(malval_t *items, int len, int vtype) {
   malval_t res;
+  res.meta = 0;
   malcontent_t content;
   mallist_t list;
   list.items =  items;
@@ -104,6 +108,7 @@ malval_t make_list(malval_t *items, int len) {
 }
 malval_t make_fn(malval_t (*fn)(mallist_t l)) {
   malval_t res = {
+    .meta = 0,
     .vtype = MAL_FUNC,
     .val = { 
       .fn = fn
@@ -113,17 +118,16 @@ malval_t make_fn(malval_t (*fn)(mallist_t l)) {
 }
 
 malval_t make_custom_fn(malval_t *ast, mallist_t *params, env_t *env) {
-  env_t * new_env = malloc(sizeof(env_t));
-  *new_env = *env;
   malval_t res = {
     .vtype = MAL_CUSTOM_FUNC,
     .val = {
       .custom_fn = {
         .ast = ast,
         .params = params,
-        .env = new_env
+        .env = env
       }
-    }
+    },
+    .meta = 0,
   };
   return res;
 }
@@ -134,6 +138,7 @@ malval_t make_num(int num) {
   res.vtype = MAL_NUMBER;
   content.num = num;
   res.val = content;
+  res.meta = 0;
   return res;
 }
 
@@ -143,18 +148,21 @@ malval_t make_symbol(char *s) {
   res.vtype = MAL_SYMBOL;
   content.str = s;
   res.val = content;
+  res.meta = 0;
   return res;
 }
 
 malval_t make_bool(int v) {
   malval_t res = make_symbol(v ? "true": "false");
   res.vtype = MAL_BOOL;
+  res.meta = 0;
   return res;
 }
 
 malval_t make_nil() {
   malval_t res = make_symbol("nil");
   res.vtype = MAL_NIL;
+  res.meta = 0;
   return res;
 }
 
@@ -164,6 +172,7 @@ malval_t throw_error(malval_t* val) {
   malval_t err = {
     .vtype = MAL_ERROR,
     .val = content,
+    .meta = 0,
   };
   GLOBAL_ERROR_POINTER = &err;
   return *GLOBAL_ERROR_POINTER;
@@ -175,6 +184,7 @@ malval_t make_string(char *s) {
   res.vtype = MAL_STRING;
   content.str = s;
   res.val = content;
+  res.meta = 0;
   return res;
 }
 
@@ -280,6 +290,9 @@ malval_t _hashmap_get(malval_t hashmap, char* key) {
 }
 
 malval_t hashmap_get(mallist_t l) {
+  if (l.items[0].vtype == MAL_NIL) {
+    return make_nil();
+  }
   return _hashmap_get(l.items[0], l.items[1].val.str);
 }
 
@@ -422,6 +435,9 @@ malval_t apply(mallist_t l) {
     items[i] = l.items[i + 1];
   }
 
+  if (GLOBAL_ERROR_POINTER) {
+    return *GLOBAL_ERROR_POINTER;
+  }
   for (int j = 0; j < l.items[l.len - 1].val.list.len; j++, i++) {
     items[i] = l.items[l.len - 1].val.list.items[j];
   }
@@ -442,6 +458,9 @@ malval_t apply(mallist_t l) {
     res = EVAL(*custom_fn.ast, new_env);
   } else {
     res = l.items[0].val.fn(make_list(items, nb_arguments).val.list);
+  }
+  if (GLOBAL_ERROR_POINTER) {
+    return *GLOBAL_ERROR_POINTER;
   }
   return res;
 }
@@ -546,6 +565,28 @@ malval_t concat(mallist_t l) {
   return make_list(items, k);
 }
 
+malval_t reverse(mallist_t l) {
+  int len = l.items[0].val.list.len;
+  malval_t *items = malloc(len * sizeof(malval_t));
+  for (int i = 0; i < len; i++) {
+    items[i] = l.items[0].val.list.items[len - i - 1];
+  }
+
+  return make_list(items, len);
+}
+
+malval_t readline(mallist_t l) {
+  char* line = malloc(100);
+
+  printf("%s", l.items[0].val.str);
+  int len;
+  if ((len = getLine(line)) > 0) {
+    line[len - 1] = '\0';
+    return make_string(line);
+  }
+  return make_nil();
+}
+
 malval_t nth(mallist_t list) {
   int index = list.items[1].val.num;
   if (index >= list.items[0].val.list.len) {
@@ -600,6 +641,33 @@ malval_t is_keyword(mallist_t list) {
   return make_bool(list.items[0].vtype == MAL_SYMBOL && list.items[0].val.str[0] == ':');
 }
 
+malval_t is_string(mallist_t list) {
+  return make_bool(list.items[0].vtype == MAL_STRING);
+}
+
+malval_t is_number(mallist_t list) {
+  return make_bool(list.items[0].vtype == MAL_NUMBER);
+}
+
+malval_t is_fn(mallist_t list) {
+  return make_bool(list.items[0].vtype == MAL_FUNC || list.items[0].vtype == MAL_CUSTOM_FUNC);
+}
+
+malval_t is_macro(mallist_t list) {
+  return make_bool(list.items[0].vtype == MAL_MACRO);
+}
+
+malval_t time_ms(mallist_t list) {
+  struct timeval tv;
+
+  gettimeofday(&tv, NULL);
+
+  int millisecondsSinceEpoch =
+      tv.tv_sec * 1000 +
+      tv.tv_usec / 1000;
+  return make_num(millisecondsSinceEpoch);
+}
+
 malval_t symbol(mallist_t list) {
   return make_symbol(list.items[0].val.str);
 }
@@ -623,6 +691,37 @@ malval_t is_vector(mallist_t list) {
 
 malval_t is_sequential(mallist_t list) {
   return make_bool(list.items[0].vtype == MAL_VECTOR || list.items[0].vtype == MAL_LIST);
+}
+
+malval_t seq(mallist_t list) {
+  malval_t val = list.items[0];
+  if (val.vtype == MAL_NIL) {
+    return make_nil();
+  }
+  if (val.vtype == MAL_STRING) {
+    int len = strlen(val.val.str);
+    if (len == 0) {
+      return make_nil();
+    }
+    malval_t *items = malloc(len * sizeof(malval_t));
+    for (int i = 0; i < len; i++) {
+      char *s = malloc(2);
+      *s = val.val.str[i];
+      *(s + 1) = '\0';
+      *(items + i) = make_string(s);
+    }
+    return make_list(items, len);
+  }
+  if (val.val.list.len == 0) {
+    return make_nil();
+  }
+
+
+  malval_t *items = malloc(val.val.list.len * sizeof(malval_t));
+  for (int i = 0; i < val.val.list.len; i++) {
+    *(items + i) = val.val.list.items[i];
+  }
+  return make_list(items, val.val.list.len);
 }
 
 malval_t hashmap(mallist_t list) {
@@ -722,6 +821,19 @@ malval_t throw(mallist_t list) {
   return throw_error(list.items);
 }
 
+malval_t meta(mallist_t list) {
+  if (list.items[0].meta != 0) {
+    return *list.items[0].meta;
+  }
+  printf("no meta\n");
+  return make_nil();
+}
+
+malval_t with_meta(mallist_t list) {
+  list.items[0].meta = list.items + 1;
+  return list.items[0];
+}
+
 void gen_repl_env() {
   struct Funcs {
     char *key;
@@ -754,6 +866,7 @@ void gen_repl_env() {
     {"swap!", *swap},
     {"cons", *cons},
     {"concat", *concat},
+    {"reverse", *reverse},
     {"nth", *nth},
     {"first", *first},
     {"rest", *rest},
@@ -767,6 +880,7 @@ void gen_repl_env() {
     {"vector", *vector},
     {"vector?", *is_vector},
     {"sequential?", *is_sequential},
+    {"seq", *seq},
     {"hash-map", *hashmap},
     {"get", *hashmap_get},
     {"contains?", *contains},
@@ -778,6 +892,14 @@ void gen_repl_env() {
     {"apply", *apply},
     {"map", *map},
     {"throw", *throw},
+    {"meta", *meta},
+    {"with-meta", *with_meta},
+    {"string?", *is_string},
+    {"number?", *is_number},
+    {"macro?", *is_macro},
+    {"fn?", *is_fn},
+    {"time-ms", *time_ms},
+    {"readline", *readline},
     {"+", *add}, //FIXME
   };
 
@@ -804,9 +926,6 @@ void gen_repl_env() {
 malval_t get(char *key, env_t *env_ptr) {
   envitem_t *item = env_ptr->items;
   for (; item != NULL; item = item->next) {
-    if (item->key == 0) {
-      printf("WHAT");
-    }
     if (item->key && strcmp(item->key, key) == 0) {
       return item->val;
     }
@@ -1469,6 +1588,9 @@ int main(int argc, char* argv[]) {
   EVAL(val, repl_env);
 
   val = read_str("(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))");
+  EVAL(val, repl_env);
+
+  val = read_str("(def! conj (fn* (c & more) (if (vector? c) (apply vector (concat c more)) (concat (reverse more) c))))");
   EVAL(val, repl_env);
 
   if (argc > 1) {

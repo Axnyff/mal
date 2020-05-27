@@ -290,6 +290,9 @@ malval_t _hashmap_get(malval_t hashmap, char* key) {
 }
 
 malval_t hashmap_get(mallist_t l) {
+  if (l.items[0].vtype == MAL_NIL) {
+    return make_nil();
+  }
   return _hashmap_get(l.items[0], l.items[1].val.str);
 }
 
