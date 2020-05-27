@@ -448,6 +448,7 @@ malval_t map(mallist_t l) {
   int i;
   malval_t* items = malloc(l.items[1].val.list.len * sizeof(malval_t));
 
+  return make_list(0, 0);
   if (l.items[0].vtype == MAL_FUNC) {
     for (i = 0; i < l.items[1].val.list.len; i++) {
       items[i] = l.items[0].val.fn(make_list(l.items[1].val.list.items + i, 1).val.list);
@@ -933,7 +934,7 @@ malval_t EVAL(malval_t val, env_t *env) {
     if (val.val.list.items[0].vtype == MAL_SYMBOL) {
       if (strcmp(val.val.list.items[0].val.str, "try*") == 0) {
         malval_t evaluated = EVAL(val.val.list.items[1], env);
-        if (evaluated.vtype == MAL_ERROR) {
+        if (evaluated.vtype == MAL_ERROR && val.val.list.len > 2) {
           env_t *new_env = create_env(env);
           set(new_env, val.val.list.items[2].val.list.items[1].val.str,
               *GLOBAL_ERROR_POINTER->val.error
