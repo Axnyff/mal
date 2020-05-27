@@ -451,6 +451,9 @@ malval_t map(mallist_t l) {
   if (l.items[0].vtype == MAL_FUNC) {
     for (i = 0; i < l.items[1].val.list.len; i++) {
       items[i] = l.items[0].val.fn(make_list(l.items[1].val.list.items + i, 1).val.list);
+      if (GLOBAL_ERROR_POINTER) {
+        return *GLOBAL_ERROR_POINTER;
+      }
     }
     return make_list(items, i);
   }
@@ -795,8 +798,9 @@ malval_t get(char *key, env_t *env_ptr) {
     return get(key, env_ptr->outer);
   }
   char *s = malloc(100);
+  strcat(s, "'");
   strcat(s, key);
-  strcat(s, " not found");
+  strcat(s, "' not found");
 
   malval_t err = make_string(s);
   return throw_error(&err);
@@ -932,7 +936,7 @@ malval_t EVAL(malval_t val, env_t *env) {
         if (evaluated.vtype == MAL_ERROR) {
           env_t *new_env = create_env(env);
           set(new_env, val.val.list.items[2].val.list.items[1].val.str,
-              *evaluated.val.error
+              *GLOBAL_ERROR_POINTER->val.error
           );
           GLOBAL_ERROR_POINTER = 0;
           return EVAL(val.val.list.items[2].val.list.items[2], new_env);
@@ -1233,7 +1237,6 @@ malval_t read_atom(struct Reader *reader) {
 char *pr_str(malval_t val, int print_readability) {
   char *s = malloc(1000);
 
-  printf("%d\n", val.vtype);
   if (val.vtype == MAL_NUMBER) {
     sprintf(s, "%d", val.val.num);
     return s;
