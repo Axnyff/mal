@@ -1,42 +1,75 @@
-import { Node, MalType } from "./types";
+import { Data } from "./types";
 
-export function prStr(v: MalType, printReadably = true): string {
-    switch (v.type) {
-        case Node.List:
-            return `(${v.list.map(v => prStr(v, printReadably)).join(" ")})`;
-        case Node.Vector:
-            return `[${v.list.map(v => prStr(v, printReadably)).join(" ")}]`;
-        case Node.HashMap:
-            let result = "{";
-            for (const [key, value] of v.entries()) {
-                if (result !== "{") {
-                    result += " ";
-                }
-                result += `${prStr(key, printReadably)} ${prStr(value, printReadably)}`;
-            }
-            result += "}";
-            return result;
-        case Node.Number:
-        case Node.Symbol:
-        case Node.Boolean:
-            return `${v.v}`;
-        case Node.String:
-            if (printReadably) {
-                const str = v.v
-                    .replace(/\\/g, "\\\\")
-                    .replace(/"/g, '\\"')
-                    .replace(/\n/g, "\\n");
-                return `"${str}"`;
-            } else {
-                return v.v;
-            }
-        case Node.Nil:
-            return "nil";
-        case Node.Keyword:
-            return `:${v.v}`;
-        case Node.Function:
-            return "#<function>";
-        case Node.Atom:
-            return `(atom ${prStr(v.v, printReadably)})`;
+export const pr_str = (
+  data: Data,
+  print_readability: boolean = true
+): string => {
+  if (!data) {
+    return "";
+  }
+  if (data.type === "atom") {
+    return `(atom ${pr_str(data.value, print_readability)})`;
+  }
+  if (data.type === "keyword") {
+    return data.value.slice(1);
+  }
+
+  if (data.type === "string") {
+    if (print_readability) {
+      const str = data.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+      return `"${str}"`;
     }
-}
+    return data.value;
+  }
+
+  if (data.type === "number") {
+    return data.value.toString();
+  }
+
+  if (data.type === 'error') {
+    return pr_str(data.value);
+  }
+  if (data.type === "symbol") {
+    return data.value;
+  }
+
+  if (data.type === "nil") {
+    return "nil";
+  }
+
+  if (data.type === "function") {
+    return "#<function>";
+  }
+
+  if (data.type === "bool") {
+    return data.value.toString();
+  }
+
+  if (data.type === "map") {
+    const content = Object.entries(data.value).reduce((acc, [key, value], i, src) => {
+      const printedKey = key.startsWith("ʞ") ? 
+        key.slice(1) : `"${key}"`;
+      acc += printedKey;
+      acc += " ";
+      acc += pr_str(value, print_readability);
+      if (i < src.length - 1) {
+        acc += ' ';
+      }
+      return acc;
+    }, "");
+    return `{${content}}`;
+  }
+
+  if (data.type === "list") {
+    return `(${data.value
+      .map(val => pr_str(val, print_readability))
+      .join(" ")})`;
+  }
+
+  if (data.type === "vector") {
+    return `[${data.value
+      .map(val => pr_str(val, print_readability))
+      .join(" ")}]`;
+  }
+  return "";
+};

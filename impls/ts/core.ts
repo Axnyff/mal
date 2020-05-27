@@ -1,428 +1,677 @@
-import * as fs from "fs";
+import fs from "fs";
+import {
+  Data,
+  Keyword,
+  Sym,
+  Fun,
+  Bool,
+  Str,
+  Err,
+  Num,
+  Seq,
+  List,
+  HashMap,
+  Atom,
+  Nil
+} from "./types";
+import { pr_str } from "./printer";
+import { read_str } from "./reader";
+const readline = require("readline-sync");
 
-import { readline } from "./node_readline";
+const prn = (...args: Data[]): Data => {
+  console.log(args.map(arg => pr_str(arg, true)).join(" "));
+  return {
+    type: "nil"
+  };
+};
 
-import { Node, MalType, MalSymbol, MalFunction, MalNil, MalList, MalVector, MalBoolean, MalNumber, MalString, MalKeyword, MalHashMap, MalAtom, equals, isSeq } from "./types";
-import { readStr } from "./reader";
-import { prStr } from "./printer";
+const list = (...args: Data[]): Data => {
+  return {
+    type: "list",
+    value: args
+  };
+};
 
-export const ns: Map<MalSymbol, MalFunction> = (() => {
-    const ns: { [symbol: string]: typeof MalFunction.prototype.func; } = {
-        "="(a: MalType, b: MalType): MalBoolean {
-            return new MalBoolean(equals(a, b));
-        },
-        throw(v: MalType): MalType {
-            throw v;
-        },
+const toBool = (v: boolean): Bool => ({
+  type: "bool",
+  value: v
+});
 
-        "nil?"(v: MalType) {
-            return new MalBoolean(v.type === Node.Nil);
-        },
-        "true?"(v: MalType) {
-            return new MalBoolean(v.type === Node.Boolean && v.v);
-        },
-        "false?"(v: MalType) {
-            return new MalBoolean(v.type === Node.Boolean && !v.v);
-        },
-        "string?"(v: MalType) {
-            return new MalBoolean(v.type === Node.String);
-        },
-        symbol(v: MalType) {
-            if (v.type !== Node.String) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: string`);
-            }
-            return MalSymbol.get(v.v);
-        },
-        "symbol?"(v: MalType) {
-            return new MalBoolean(v.type === Node.Symbol);
-        },
-        keyword(v: MalType) {
-            if (v.type !== Node.String) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: string`);
-            }
-            return MalKeyword.get(v.v);
-        },
-        "keyword?"(v: MalType) {
-            return new MalBoolean(v.type === Node.Keyword);
-        },
-        "number?"(v: MalType) {
-            return new MalBoolean(v.type === Node.Number);
-        },
-        "fn?"(v: MalType) {
-            return new MalBoolean(v.type === Node.Function && !v.isMacro);
-        },
-        "macro?"(v: MalType) {
-            return new MalBoolean(v.type === Node.Function && v.isMacro);
-        },
+const is_list = (arg: Data): Bool => toBool(arg.type === "list");
 
-        "pr-str"(...args: MalType[]): MalString {
-            return new MalString(args.map(v => prStr(v, true)).join(" "));
-        },
-        "str"(...args: MalType[]): MalString {
-            return new MalString(args.map(v => prStr(v, false)).join(""));
-        },
-        prn(...args: MalType[]): MalNil {
-            const str = args.map(v => prStr(v, true)).join(" ");
-            console.log(str);
-            return MalNil.instance;
-        },
-        println(...args: MalType[]): MalNil {
-            const str = args.map(v => prStr(v, false)).join(" ");
-            console.log(str);
-            return MalNil.instance;
-        },
-        "read-string"(v: MalType) {
-            if (v.type !== Node.String) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: string`);
-            }
-            return readStr(v.v);
-        },
-        readline(v: MalType) {
-            if (v.type !== Node.String) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: string`);
-            }
+const is_empty = (arg: Data): Bool => toBool(count(arg).value === 0);
 
-            const ret = readline(v.v);
-            if (ret == null) {
-                return MalNil.instance;
-            }
-
-            return new MalString(ret);
-        },
-        slurp(v: MalType) {
-            if (v.type !== Node.String) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: string`);
-            }
-            const content = fs.readFileSync(v.v, "UTF-8");
-            return new MalString(content);
-        },
-
-        "<"(a: MalType, b: MalType): MalBoolean {
-            if (a.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${a.type}, expected: number`);
-            }
-            if (b.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: number`);
-            }
-
-            return new MalBoolean(a.v < b.v);
-        },
-        "<="(a: MalType, b: MalType): MalBoolean {
-            if (a.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${a.type}, expected: number`);
-            }
-            if (b.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: number`);
-            }
-
-            return new MalBoolean(a.v <= b.v);
-        },
-        ">"(a: MalType, b: MalType): MalBoolean {
-            if (a.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${a.type}, expected: number`);
-            }
-            if (b.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: number`);
-            }
-
-            return new MalBoolean(a.v > b.v);
-        },
-        ">="(a: MalType, b: MalType): MalBoolean {
-            if (a.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${a.type}, expected: number`);
-            }
-            if (b.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: number`);
-            }
-
-            return new MalBoolean(a.v >= b.v);
-        },
-        "+"(a: MalType, b: MalType): MalNumber {
-            if (a.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${a.type}, expected: number`);
-            }
-            if (b.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: number`);
-            }
-
-            return new MalNumber(a.v + b.v);
-        },
-        "-"(a: MalType, b: MalType): MalNumber {
-            if (a.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${a.type}, expected: number`);
-            }
-            if (b.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: number`);
-            }
-
-            return new MalNumber(a.v - b.v);
-        },
-        "*"(a: MalType, b: MalType): MalNumber {
-            if (a.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${a.type}, expected: number`);
-            }
-            if (b.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: number`);
-            }
-
-            return new MalNumber(a.v * b.v);
-        },
-        "/"(a: MalType, b: MalType): MalNumber {
-            if (a.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${a.type}, expected: number`);
-            }
-            if (b.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: number`);
-            }
-
-            return new MalNumber(a.v / b.v);
-        },
-        "time-ms"() {
-            return new MalNumber(Date.now());
-        },
-
-        list(...args: MalType[]): MalList {
-            return new MalList(args);
-        },
-        "list?"(v: MalType): MalBoolean {
-            return new MalBoolean(v.type === Node.List);
-        },
-        vector(...args: MalType[]): MalVector {
-            return new MalVector(args);
-        },
-        "vector?"(v: MalType): MalBoolean {
-            return new MalBoolean(v.type === Node.Vector);
-        },
-        "hash-map"(...args: MalType[]) {
-            return new MalHashMap(args);
-        },
-        "map?"(v: MalType): MalBoolean {
-            return new MalBoolean(v.type === Node.HashMap);
-        },
-        assoc(v: MalType, ...args: MalType[]) {
-            if (v.type !== Node.HashMap) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: hash-map`);
-            }
-            return v.assoc(args);
-        },
-        dissoc(v: MalType, ...args: MalType[]) {
-            if (v.type !== Node.HashMap) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: hash-map`);
-            }
-            return v.dissoc(args);
-        },
-        get(v: MalType, key: MalType) {
-            if (v.type === Node.Nil) {
-                return MalNil.instance;
-            }
-            if (v.type !== Node.HashMap) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: hash-map`);
-            }
-            if (key.type !== Node.String && key.type !== Node.Keyword) {
-                throw new Error(`unexpected symbol: ${key.type}, expected: string or keyword`);
-            }
-
-            return v.get(key) || MalNil.instance;
-        },
-        "contains?"(v: MalType, key: MalType) {
-            if (v.type === Node.Nil) {
-                return MalNil.instance;
-            }
-            if (v.type !== Node.HashMap) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: hash-map`);
-            }
-            if (key.type !== Node.String && key.type !== Node.Keyword) {
-                throw new Error(`unexpected symbol: ${key.type}, expected: string or keyword`);
-            }
-
-            return new MalBoolean(v.has(key));
-        },
-        keys(v: MalType) {
-            if (v.type !== Node.HashMap) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: hash-map`);
-            }
-
-            return new MalList([...v.keys()]);
-        },
-        vals(v: MalType) {
-            if (v.type !== Node.HashMap) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: hash-map`);
-            }
-
-            return new MalList([...v.vals()]);
-        },
-
-        "sequential?"(v: MalType) {
-            return new MalBoolean(isSeq(v));
-        },
-        cons(a: MalType, b: MalType) {
-            if (!isSeq(b)) {
-                throw new Error(`unexpected symbol: ${b.type}, expected: list or vector`);
-            }
-
-            return new MalList([a].concat(b.list));
-        },
-        concat(...args: MalType[]) {
-            const list = args
-                .map(arg => {
-                    if (!isSeq(arg)) {
-                        throw new Error(`unexpected symbol: ${arg.type}, expected: list or vector`);
-                    }
-                    return arg;
-                })
-                .reduce((p, c) => p.concat(c.list), [] as MalType[]);
-
-            return new MalList(list);
-        },
-        nth(list: MalType, idx: MalType) {
-            if (!isSeq(list)) {
-                throw new Error(`unexpected symbol: ${list.type}, expected: list or vector`);
-            }
-            if (idx.type !== Node.Number) {
-                throw new Error(`unexpected symbol: ${idx.type}, expected: number`);
-            }
-
-            const v = list.list[idx.v];
-            if (!v) {
-                throw new Error("nth: index out of range");
-            }
-
-            return v;
-        },
-        first(v: MalType) {
-            if (v.type === Node.Nil) {
-                return MalNil.instance;
-            }
-            if (!isSeq(v)) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: list or vector`);
-            }
-
-            return v.list[0] || MalNil.instance;
-        },
-        rest(v: MalType) {
-            if (v.type === Node.Nil) {
-                return new MalList([]);
-            }
-            if (!isSeq(v)) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: list or vector`);
-            }
-
-            return new MalList(v.list.slice(1));
-        },
-        "empty?"(v: MalType): MalBoolean {
-            if (!isSeq(v)) {
-                return new MalBoolean(false);
-            }
-            return new MalBoolean(v.list.length === 0);
-        },
-        count(v: MalType): MalNumber {
-            if (isSeq(v)) {
-                return new MalNumber(v.list.length);
-            }
-            if (v.type === Node.Nil) {
-                return new MalNumber(0);
-            }
-            throw new Error(`unexpected symbol: ${v.type}`);
-        },
-        apply(f: MalType, ...list: MalType[]) {
-            if (f.type !== Node.Function) {
-                throw new Error(`unexpected symbol: ${f.type}, expected: function`);
-            }
-
-            const tail = list[list.length - 1];
-            if (!isSeq(tail)) {
-                throw new Error(`unexpected symbol: ${tail.type}, expected: list or vector`);
-            }
-            const args = list.slice(0, -1).concat(tail.list);
-            return f.func(...args);
-        },
-        map(f: MalType, list: MalType) {
-            if (f.type !== Node.Function) {
-                throw new Error(`unexpected symbol: ${f.type}, expected: function`);
-            }
-            if (!isSeq(list)) {
-                throw new Error(`unexpected symbol: ${list.type}, expected: list or vector`);
-            }
-
-            return new MalList(list.list.map(v => f.func(v)));
-        },
-
-        conj(list: MalType, ...args: MalType[]) {
-            switch (list.type) {
-                case Node.List:
-                    const newList = new MalList(list.list);
-                    args.forEach(arg => newList.list.unshift(arg));
-                    return newList;
-                case Node.Vector:
-                    return new MalVector([...list.list, ...args]);
-            }
-
-            throw new Error(`unexpected symbol: ${list.type}, expected: list or vector`);
-        },
-        seq(v: MalType) {
-            if (v.type === Node.List) {
-                if (v.list.length === 0) {
-                    return MalNil.instance;
-                }
-                return v;
-            }
-            if (v.type === Node.Vector) {
-                if (v.list.length === 0) {
-                    return MalNil.instance;
-                }
-                return new MalList(v.list);
-            }
-            if (v.type === Node.String) {
-                if (v.v.length === 0) {
-                    return MalNil.instance;
-                }
-                return new MalList(v.v.split("").map(s => new MalString(s)));
-            }
-            if (v.type === Node.Nil) {
-                return MalNil.instance;
-            }
-
-            throw new Error(`unexpected symbol: ${v.type}, expected: list or vector or string`);
-        },
-
-        meta(v: MalType) {
-            return v.meta || MalNil.instance;
-        },
-        "with-meta"(v: MalType, m: MalType) {
-            return v.withMeta(m);
-        },
-        atom(v: MalType): MalAtom {
-            return new MalAtom(v);
-        },
-        "atom?"(v: MalType): MalBoolean {
-            return new MalBoolean(v.type === Node.Atom);
-        },
-        deref(v: MalType): MalType {
-            if (v.type !== Node.Atom) {
-                throw new Error(`unexpected symbol: ${v.type}, expected: atom`);
-            }
-            return v.v;
-        },
-        "reset!"(atom: MalType, v: MalType): MalType {
-            if (atom.type !== Node.Atom) {
-                throw new Error(`unexpected symbol: ${atom.type}, expected: atom`);
-            }
-            atom.v = v;
-            return v;
-        },
-        "swap!"(atom: MalType, f: MalType, ...args: MalType[]): MalType {
-            if (atom.type !== Node.Atom) {
-                throw new Error(`unexpected symbol: ${atom.type}, expected: atom`);
-            }
-            if (f.type !== Node.Function) {
-                throw new Error(`unexpected symbol: ${f.type}, expected: function`);
-            }
-            atom.v = f.func(...[atom.v].concat(args));
-            return atom.v;
-        },
+const count = (arg: Data): Num | Err => {
+  if (arg.type === "nil") {
+    return {
+      type: "number",
+      value: 0
     };
+  }
+  if (arg.type !== "list" && arg.type !== "vector") {
+    throw new Error("count? should be called on a list");
+  }
+  return {
+    type: "number",
+    value: arg.value.length
+  };
+};
 
-    const map = new Map<MalSymbol, MalFunction>();
-    Object.keys(ns).forEach(key => map.set(MalSymbol.get(key), MalFunction.fromBootstrap(ns[key])));
-    return map;
-})();
+const isSeq = (a: Data): a is Seq => {
+  return a.type === "list" || a.type === "vector";
+};
+
+const _equal = (a: Data, b: Data): boolean => {
+  if (isSeq(a) && isSeq(b)) {
+    if (a.value.length !== b.value.length) {
+      return false;
+    }
+    for (let i = 0; i < a.value.length; i++) {
+      if (!_equal(a.value[i], b.value[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (a.type !== b.type) {
+    return false;
+  }
+
+  if (a.type === "map" && b.type === "map") {
+    const keysA = Object.keys(a.value);
+    const keysB = Object.keys(b.value);
+
+    if (keysA.length !== keysB.length) {
+      return false;
+    }
+
+    for (let key of keysA) {
+      if (!keysB.includes(key)) {
+        return false;
+      }
+
+      if (!_equal(a.value[key], b.value[key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return a.value === b.value;
+};
+
+const equal = (a: Data, b: Data): Bool => toBool(_equal(a, b));
+
+const buildCompFn = (fn: (a: number, b: number) => boolean) => (
+  arg1: Data,
+  arg2: Data
+): Bool | Err => {
+  if (arg1.type !== "number" || arg2.type !== "number") {
+    throw new Error("numeric function called with non numbers");
+  }
+  return {
+    type: "bool",
+    value: fn(arg1.value, arg2.value)
+  };
+};
+
+const less = buildCompFn((a, b) => a < b);
+const less_or_equal = buildCompFn((a, b) => a <= b);
+const more = buildCompFn((a, b) => a > b);
+const more_or_equal = buildCompFn((a, b) => a >= b);
+
+const atom = (value: Data): Atom => ({
+  type: "atom",
+  value
+});
+
+const is_atom = (value: Data): Bool => toBool(value.type === "atom");
+
+const is_number = (value: Data): Bool => toBool(value.type === "number");
+
+const deref = (atom: Atom): Data => atom.value;
+
+const do_reset = (atom: Atom, value: Data): Data => {
+  atom.value = value;
+  return value;
+};
+
+const do_swap = (atom: Atom, func: Fun, ...args: Data[]): Data => {
+  atom.value = func.value.fn(...[atom.value, ...args]);
+  return atom.value;
+};
+
+const cons = (ast: Data, list: List): Data => ({
+  type: "list",
+  value: [ast, ...list.value]
+});
+
+const conj = (ast: Seq, ...items: Data[]): Seq => {
+  if (ast.type === "list") {
+    return {
+      type: "list",
+      value: [...items.reverse(), ...ast.value]
+    };
+  }
+  return {
+    type: "vector",
+    value: [...ast.value, ...items]
+  };
+};
+
+const seq = (ast: Seq | Str | Nil) : Seq | Nil => {
+  if (ast.type === 'nil' || ast.value.length === 0) {
+    return {
+      type: 'nil',
+    }
+  }
+  if (ast.type === 'string') {
+    return {
+      type: 'list',
+      value: ast.value.split("").map(s => ({
+        type: 'string',
+        value: s,
+      }))
+    };
+  }
+  return {
+    type: 'list',
+    value: [...ast.value],
+  }
+};
+
+const concat = (...args: List[]): List => ({
+  type: "list",
+  value: args.reduce((acc, { value }) => acc.concat(value), [] as Data[])
+});
+
+const nth = (lst: Seq, index: Num): Data => {
+  if (index.value >= lst.value.length) {
+    throw new Error(".*Invalid range.*");
+  }
+  return lst.value[index.value];
+};
+
+const first = (lst: Seq | Nil): Data => {
+  if (lst.type === "nil" || lst.value.length === 0) {
+    return {
+      type: "nil"
+    };
+  }
+  return lst.value[0];
+};
+
+const rest = (lst: Seq | Nil): List => {
+  if (lst.type === "nil" || lst.value.length === 0) {
+    return {
+      type: "list",
+      value: []
+    };
+  }
+  return { type: "list", value: lst.value.slice(1) };
+};
+
+const apply = (f: Fun, ...args: Data[]) => {
+  const lastArg = args[args.length - 1];
+  if (!isSeq(lastArg)) {
+    throw new Error("");
+  }
+  const actualArgs = [...args.slice(0, -1), ...lastArg.value];
+  return f.value.fn(...actualArgs);
+};
+
+const map = (f: Fun, col: Seq): List => {
+  return {
+    type: "list",
+    value: col.value.map(f.value.fn)
+  };
+};
+
+const is_nil = (ast: Data) => toBool(ast.type === "nil");
+
+const is_true = (ast: Data) => toBool(ast.value === true);
+
+const is_false = (ast: Data) => toBool(ast.value === false);
+
+const is_symbol = (ast: Data) => toBool(ast.type === "symbol");
+
+const symbol = (ast: Str): Sym => ({
+  type: "symbol",
+  value: ast.value
+});
+
+const keyword = (ast: Str | Keyword): Keyword =>
+  ast.type === "keyword"
+    ? ast
+    : {
+        type: "keyword",
+        value: `\u029E:${ast.value}`
+      };
+
+const is_keyword = (ast: Data) => toBool(ast.type === "keyword");
+
+const vector = (...args: Data[]): Data => ({
+  type: "vector",
+  value: args
+});
+
+const is_vector = (ast: Data) => toBool(ast.type === "vector");
+
+const hashmap = (...args: Data[]): HashMap => {
+  const content: HashMap["value"] = {};
+  let i = 0;
+  while (i < args.length) {
+    let key = args[i];
+    let value = args[i + 1];
+    if (key.type !== "string" && key.type !== "keyword") {
+      throw new Error("wrong key for map");
+    }
+    content[key.value] = value;
+    i += 2;
+  }
+  return {
+    type: "map",
+    value: content
+  };
+};
+
+const is_map = (arg: Data) => toBool(arg.type === "map");
+
+const assoc = (map: HashMap, ...keyValues: Data[]): HashMap => {
+  const existingKeyValues: Data[] = Object.entries(map.value).reduce(
+    (acc, [key, value]) => {
+      return [
+        ...acc,
+        {
+          type: key.startsWith("\u029E") ? "keyword" : "string",
+          value: key
+        },
+        value
+      ];
+    },
+    [] as Data[]
+  );
+  return hashmap(...existingKeyValues, ...keyValues);
+};
+
+const dissoc = (map: HashMap, ...keyToRemove: Data[]): HashMap => {
+  const remainingKeyValues: Data[] = Object.entries(map.value).reduce(
+    (acc, [key, value]) => {
+      if (keyToRemove.some(({ value }) => value === key)) {
+        return acc;
+      }
+      return [
+        ...acc,
+        {
+          type: key.startsWith("\u029E") ? "keyword" : "string",
+          value: key
+        },
+        value
+      ];
+    },
+    [] as Data[]
+  );
+  return hashmap(...remainingKeyValues);
+};
+
+const get = (map: HashMap | Nil, key: Str | Keyword): Data => {
+  if (map.type === "nil") {
+    return {
+      type: "nil"
+    };
+  }
+  const keyAndValue = Object.entries(map.value).find(([k]) => k === key.value);
+  return keyAndValue
+    ? keyAndValue[1]
+    : {
+        type: "nil"
+      };
+};
+
+const contains = (map: HashMap, key: Str | Keyword): Data =>
+  toBool(Object.keys(map.value).includes(key.value));
+
+const keys = (map: HashMap): List => ({
+  type: "list",
+  value: Object.keys(map.value).map(key => ({
+    type: key.startsWith("\u029E") ? "keyword" : "string",
+    value: key
+  }))
+});
+
+const vals = (map: HashMap): List => ({
+  type: "list",
+  value: Object.values(map.value)
+});
+
+export const ns: { [K: string]: Fun } = {
+  prn: {
+    type: "function",
+    value: { fn: prn }
+  },
+  list: {
+    type: "function",
+    value: { fn: list }
+  },
+  "list?": {
+    type: "function",
+    value: { fn: is_list }
+  },
+  "empty?": {
+    type: "function",
+    value: { fn: is_empty }
+  },
+  count: {
+    type: "function",
+    value: { fn: count }
+  },
+  "<": {
+    type: "function",
+    value: { fn: less }
+  },
+  "<=": {
+    type: "function",
+    value: { fn: less_or_equal }
+  },
+  ">": {
+    type: "function",
+    value: { fn: more }
+  },
+  ">=": {
+    type: "function",
+    value: { fn: more_or_equal }
+  },
+  "=": {
+    type: "function",
+    value: { fn: equal }
+  },
+  str: {
+    type: "function",
+    value: {
+      fn: (...args: Data[]) => ({
+        type: "string",
+        value: args.map(arg => pr_str(arg, false)).join("")
+      })
+    }
+  },
+  "pr-str": {
+    type: "function",
+    value: {
+      fn: (...args: Data[]) => ({
+        type: "string",
+        value: args.map(arg => pr_str(arg, true)).join(" ")
+      })
+    }
+  },
+  println: {
+    type: "function",
+    value: {
+      fn: (...args: Data[]) => {
+        console.log(args.map(arg => pr_str(arg, false)).join(" "));
+        return {
+          type: "nil"
+        };
+      }
+    }
+  },
+  "read-string": {
+    type: "function",
+    value: { fn: (a: Str) => read_str(a.value, true) }
+  },
+  slurp: {
+    type: "function",
+    value: {
+      fn: (filename: Str) => {
+        try {
+          const content = fs.readFileSync(filename.value);
+          return {
+            type: "string",
+            value: content.toString()
+          };
+        } catch (err) {
+          throw new Error(`File ${filename.value} not found`);
+        }
+      }
+    }
+  },
+  atom: {
+    type: "function",
+    value: { fn: atom }
+  },
+  "atom?": {
+    type: "function",
+    value: { fn: is_atom }
+  },
+  deref: {
+    type: "function",
+    value: { fn: deref }
+  },
+  "reset!": {
+    type: "function",
+    value: { fn: do_reset }
+  },
+  "swap!": {
+    type: "function",
+    value: { fn: do_swap }
+  },
+  cons: {
+    type: "function",
+    value: { fn: cons }
+  },
+  concat: {
+    type: "function",
+    value: { fn: concat }
+  },
+  nth: {
+    type: "function",
+    value: { fn: nth }
+  },
+  first: {
+    type: "function",
+    value: { fn: first }
+  },
+  rest: {
+    type: "function",
+    value: { fn: rest }
+  },
+  apply: {
+    type: "function",
+    value: { fn: apply }
+  },
+  map: {
+    type: "function",
+    value: { fn: map }
+  },
+  "nil?": {
+    type: "function",
+    value: { fn: is_nil }
+  },
+  "true?": {
+    type: "function",
+    value: { fn: is_true }
+  },
+  "false?": {
+    type: "function",
+    value: { fn: is_false }
+  },
+  "symbol?": {
+    type: "function",
+    value: { fn: is_symbol }
+  },
+  throw: {
+    type: "function",
+    value: {
+      fn: (ast: Data) => {
+        throw ast;
+      }
+    }
+  },
+  symbol: {
+    type: "function",
+    value: {
+      fn: symbol
+    }
+  },
+  keyword: {
+    type: "function",
+    value: {
+      fn: keyword
+    }
+  },
+  "keyword?": {
+    type: "function",
+    value: {
+      fn: is_keyword
+    }
+  },
+  vector: {
+    type: "function",
+    value: {
+      fn: vector
+    }
+  },
+  "vector?": {
+    type: "function",
+    value: {
+      fn: is_vector
+    }
+  },
+  "sequential?": {
+    type: "function",
+    value: {
+      fn: a => toBool(isSeq(a))
+    }
+  },
+  "hash-map": {
+    type: "function",
+    value: {
+      fn: hashmap
+    }
+  },
+  "map?": {
+    type: "function",
+    value: {
+      fn: is_map
+    }
+  },
+  assoc: {
+    type: "function",
+    value: {
+      fn: assoc
+    }
+  },
+  dissoc: {
+    type: "function",
+    value: {
+      fn: dissoc
+    }
+  },
+  get: {
+    type: "function",
+    value: {
+      fn: get
+    }
+  },
+  "contains?": {
+    type: "function",
+    value: {
+      fn: contains
+    }
+  },
+  keys: {
+    type: "function",
+    value: {
+      fn: keys
+    }
+  },
+  vals: {
+    type: "function",
+    value: {
+      fn: vals
+    }
+  },
+  readline: {
+    type: "function",
+    value: {
+      fn: (a: Str): Data => {
+        const res = readline.question(a.value);
+        return {
+          type: "string",
+          value: res
+        };
+      }
+    }
+  },
+  "time-ms": {
+    type: "function",
+    value: {
+      fn: () => ({
+        type: "number",
+        value: Date.now()
+      })
+    }
+  },
+  meta: {
+    type: "function",
+    value: {
+      fn: (arg: Data) => {
+        return (
+          arg.meta || {
+            type: "nil"
+          }
+        );
+      }
+    }
+  },
+  "with-meta": {
+    type: "function",
+    value: {
+      fn: (a: Data, b: Data) => {
+        return {
+          ...a,
+          meta: b
+        };
+      }
+    }
+  },
+  "fn?": {
+    type: "function",
+    value: {
+      fn: (arg: Data) => {
+        return toBool(arg.type === "function" && arg.is_macro !== true);
+      }
+    }
+  },
+  "macro?": {
+    type: "function",
+    value: {
+      fn: (arg: Data) => {
+        return toBool(arg.type === "function" && arg.is_macro === true);
+      }
+    }
+  },
+  "string?": {
+    type: "function",
+    value: {
+      fn: (arg: Data) => toBool(arg.type === 'string'),
+    }
+  },
+  "number?": {
+    type: "function",
+    value: {
+      fn: is_number
+    }
+  },
+  seq: {
+    type: "function",
+    value: {
+      fn: seq,
+    }
+  },
+  conj: {
+    type: "function",
+    value: {
+      fn: conj,
+    }
+  }
+};

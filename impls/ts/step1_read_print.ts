@@ -1,41 +1,32 @@
-import { readline } from "./node_readline";
+import { pr_str } from "./printer";
+import { read_str } from "./reader";
 
-import { MalType } from "./types";
-import { readStr } from "./reader";
-import { prStr } from "./printer";
+const readline = require("readline");
 
-// READ
-function read(str: string): MalType {
-    return readStr(str);
-}
-
-// EVAL
-function evalMal(ast: any, _env?: any): any {
-    // TODO
-    return ast;
-}
-
-// PRINT
-function print(exp: MalType): string {
-    return prStr(exp);
-}
-
-function rep(str: string): string {
-    return print(evalMal(read(str)));
-}
-
-while (true) {
-    const line = readline("user> ");
-    if (line == null) {
-        break;
+const rep = (input: string): string => {
+  try {
+    return pr_str(read_str(input, true));
+  } catch (e) {
+    if (e instanceof Error) {
+      return pr_str(
+        {
+          type: "string",
+          value: `.*Error.*${e.message}`
+        },
+        false
+      );
     }
-    if (line === "") {
-        continue;
-    }
-    try {
-        console.log(rep(line));
-    } catch (e) {
-        const err: Error = e;
-        console.error(err.message);
-    }
-}
+    return `.*Error.*${pr_str(e)}`;
+  }
+};
+
+process.stdout.write("user> ");
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  terminal: true
+});
+rl.on("line", (line: string) => {
+  console.log(rep(line));
+  process.stdout.write("user> ");
+});

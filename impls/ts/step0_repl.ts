@@ -1,35 +1,16 @@
-import { readline } from "./node_readline";
+const readline = require("readline");
 
-// READ
-function read(str: string): any {
-    // TODO
-    return str;
-}
+const rep = (input: string): string => {
+  return input;
+};
 
-// EVAL
-function evalMal(ast: any, _env?: any): any {
-    // TODO
-    return ast;
-}
-
-// PRINT
-function print(exp: any): string {
-    // TODO
-    return exp;
-}
-
-function rep(str: string): string {
-    // TODO
-    return print(evalMal(read(str)));
-}
-
-while (true) {
-    const line = readline("user> ");
-    if (line == null) {
-        break;
-    }
-    if (line === "") {
-        continue;
-    }
-    console.log(rep(line));
-}
+process.stdout.write("user> ");
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  terminal: true
+});
+rl.on("line", (line: string) => {
+  console.log(rep(line));
+  process.stdout.write("user> ");
+});

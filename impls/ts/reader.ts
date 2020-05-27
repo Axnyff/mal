@@ -1,146 +1,256 @@
-import { MalType, MalList, MalString, MalNumber, MalBoolean, MalNil, MalKeyword, MalSymbol, MalVector, MalHashMap } from "./types";
+import { List, Vector, HashMap, Primitive, Data, Err } from "./types";
 
 class Reader {
-    position = 0;
-
-    constructor(private tokens: string[]) { }
-
-    next(): string {
-        const ret = this.peek();
-        this.position += 1;
-        return ret;
-    }
-
-    peek(): string {
-        return this.tokens[this.position];
-    }
+  position: number;
+  tokens: string[];
+  constructor(tokens: string[]) {
+    this.tokens = tokens;
+    this.position = 0;
+  }
+  next() {
+    return this.tokens[this.position++];
+  }
+  peek() {
+    return this.tokens[this.position];
+  }
 }
 
-export function readStr(input: string): MalType {
-    const tokens = tokenizer(input);
-    const reader = new Reader(tokens);
-    return readForm(reader);
-}
-
-function tokenizer(input: string): string[] {
-    const regexp = /[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"?|;.*|[^\s\[\]{}('"`,;)]*)/g;
-    const tokens: string[] = [];
-    while (true) {
-        const matches = regexp.exec(input);
-        if (!matches) {
-            break;
-        }
-        const match = matches[1];
-        if (match === "") {
-            break;
-        }
-        if (match[0] !== ";") {
-            tokens.push(match);
-        }
+const tokenize = (input: string) => {
+  const regex = /[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"?|;.*|[^\s\[\]{}('"`,;)]*)/g;
+  const tokens = [];
+  let match = regex.exec(input);
+  while (match !== null && match[0] !== "") {
+    tokens.push(match[1]);
+    if (match.index >= input.length) {
+      break;
     }
+    match = regex.exec(input);
+  }
 
-    return tokens;
-}
+  return tokens;
+};
 
-function readForm(reader: Reader): MalType {
-    const token = reader.peek();
-    switch (token) {
-        case "(":
-            return readList(reader);
-        case "[":
-            return readVector(reader);
-        case "{":
-            return readHashMap(reader);
-        case "'":
-            return readSymbol("quote");
-        case "`":
-            return readSymbol("quasiquote");
-        case "~":
-            return readSymbol("unquote");
-        case "~@":
-            return readSymbol("splice-unquote");
-        case "@":
-            return readSymbol("deref");
-        case "^":
-            {
-                reader.next();
-                const sym = MalSymbol.get("with-meta");
-                const target = readForm(reader);
-                return new MalList([sym, readForm(reader), target]);
-            }
-        default:
-            return readAtom(reader);
+const read_form = (reader: Reader, expand: boolean): Data => {
+  let token = reader.peek();
+  if (!token) {
+    return {
+      type: "nil"
+    };
+  }
+  while (token.startsWith(";")) {
+    reader.next();
+    token = reader.peek();
+    if (!token) {
+      return {
+        type: "nil"
+      };
     }
-
-    function readSymbol(name: string) {
+  }
+  switch (token) {
+    case "@":
+      if (expand) {
         reader.next();
-        const sym = MalSymbol.get(name);
-        const target = readForm(reader);
-        return new MalList([sym, target]);
-    }
-}
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "deref"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
+    case "'":
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "quote"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
+    case "`":
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "quasiquote"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
+    case "^":
+      if (expand) {
+        reader.next();
+        const meta = read_form(reader, expand);
+        const content = read_form(reader, expand);
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "with-meta"
+            },
+            content,
+            meta
+          ]
+        };
+      }
+    case "~":
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "unquote"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
+    case "~@":
+      if (expand) {
+        reader.next();
+        return {
+          type: "list",
+          value: [
+            {
+              type: "symbol",
+              value: "splice-unquote"
+            },
+            read_form(reader, expand)
+          ]
+        };
+      }
+    case "(":
+      return read_list(reader, expand);
 
-function readList(reader: Reader): MalType {
-    return readParen(reader, MalList, "(", ")");
-}
+    case "[":
+      return read_vector(reader, expand);
 
-function readVector(reader: Reader): MalType {
-    return readParen(reader, MalVector, "[", "]");
-}
+    case "{":
+      return read_map(reader, expand);
 
-function readHashMap(reader: Reader): MalType {
-    return readParen(reader, MalHashMap, "{", "}");
-}
+    default:
+      return read_atom(reader);
+  }
+};
 
-function readParen(reader: Reader, ctor: { new (list: MalType[]): MalType; }, open: string, close: string): MalType {
-    const token = reader.next(); // drop open paren
-    if (token !== open) {
-        throw new Error(`unexpected token ${token}, expected ${open}`);
-    }
-    const list: MalType[] = [];
-    while (true) {
-        const next = reader.peek();
-        if (next === close) {
-            break;
-        } else if (!next) {
-            throw new Error("unexpected EOF");
-        }
-        list.push(readForm(reader));
-    }
-    reader.next(); // drop close paren
+const read_list = (reader: Reader, expand: boolean): List => {
+  const list_content = [];
+  reader.next();
+  while (reader.peek()[0] !== ")") {
+    const form = read_form(reader, expand);
+    list_content.push(form);
+  }
+  reader.next();
+  return {
+    type: "list",
+    value: list_content
+  };
+};
 
-    return new ctor(list);
-}
+const read_vector = (reader: Reader, expand: boolean): Vector => {
+  const vector_content = [];
+  reader.next();
+  while (reader.peek()[0] !== "]") {
+    const form = read_form(reader, expand);
+    vector_content.push(form);
+  }
+  reader.next();
+  return {
+    type: "vector",
+    value: vector_content
+  };
+};
 
-function readAtom(reader: Reader): MalType {
-    const token = reader.next();
-    if (token.match(/^-?[0-9]+$/)) {
-        const v = parseInt(token, 10);
-        return new MalNumber(v);
+const read_map = (reader: Reader, expand: boolean): HashMap | Err => {
+  const map_content: HashMap["value"] = {};
+  reader.next();
+  while (reader.peek()[0] !== "}") {
+    const key = read_form(reader, expand);
+    if (key.type !== "string" && key.type !== "keyword") {
+      throw new Error(".*(Wrong key for map).*");
     }
-    if (token.match(/^-?[0-9]\.[0-9]+$/)) {
-        const v = parseFloat(token);
-        return new MalNumber(v);
-    }
-    if (token.match(/^"(?:\\.|[^\\"])*"$/)) {
-        const v = token.slice(1, token.length - 1)
-            .replace(/\\(.)/g, (_, c: string) => c == 'n' ? '\n' : c)
-        return new MalString(v);
-    }
-    if (token[0] === '"') {
-        throw new Error("expected '\"', got EOF");
-    }
-    if (token[0] === ":") {
-        return MalKeyword.get(token.substr(1));
-    }
-    switch (token) {
-        case "nil":
-            return MalNil.instance;
-        case "true":
-            return new MalBoolean(true);
-        case "false":
-            return new MalBoolean(false);
+    const value = read_form(reader, expand);
+    map_content[key.value] = value;
+  }
+  reader.next();
+  return {
+    type: "map",
+    value: map_content
+  };
+};
+
+const read_atom = (reader: Reader): Primitive => {
+  const token = reader.next();
+  if (token === "false" || token === "true") {
+    return {
+      type: "bool",
+      value: token === "true"
+    };
+  }
+  if (token === "nil") {
+    return {
+      type: "nil"
+    };
+  }
+  if (token[0] == ":") {
+    return {
+      type: "keyword",
+      value: `\u029E${token}`
+    };
+  }
+  if (token[0] == '"') {
+    const valid = token.match(/^"(\\[n"\\]|[^\\"])*"$/);
+    if (!valid) {
+      throw new Error(".*(EOF|end of input|unbalanced).*");
     }
 
-    return MalSymbol.get(token);
-}
+    const value = token.slice(1, -1).replace(/\\([\\n"])/g, match => {
+      if (match === "\\\\") {
+        return "\\";
+      }
+      if (match === '\\"') {
+        return '"';
+      }
+      return "\n";
+    });
+    return {
+      type: "string",
+      value
+    };
+  }
+  if (Number.isNaN(parseFloat(token))) {
+    return {
+      type: "symbol",
+      value: token
+    };
+  }
+  return {
+    type: "number",
+    value: parseFloat(token)
+  };
+};
+
+export const read_str = (input: string, expand: boolean = false): Data => {
+  const tokens = tokenize(input);
+  const reader = new Reader(tokens);
+  try {
+    return read_form(reader, expand);
+  } catch (e) {
+    throw new Error(".*(EOF|end of input|unbalanced).*");
+  }
+};
