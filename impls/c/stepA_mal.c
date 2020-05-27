@@ -564,6 +564,28 @@ malval_t concat(mallist_t l) {
   return make_list(items, k);
 }
 
+malval_t reverse(mallist_t l) {
+  int len = l.items[0].val.list.len;
+  malval_t *items = malloc(len * sizeof(malval_t));
+  for (int i = 0; i < len; i++) {
+    items[i] = l.items[0].val.list.items[len - i - 1];
+  }
+
+  return make_list(items, len);
+}
+
+malval_t readline(mallist_t l) {
+  char* line = malloc(100);
+
+  printf("%s", l.items[0].val.str);
+  int len;
+  if ((len = getLine(line)) > 0) {
+    line[len - 1] = '\0';
+    return make_string(line);
+  }
+  return make_nil();
+}
+
 malval_t nth(mallist_t list) {
   int index = list.items[1].val.num;
   if (index >= list.items[0].val.list.len) {
@@ -661,6 +683,37 @@ malval_t is_vector(mallist_t list) {
 
 malval_t is_sequential(mallist_t list) {
   return make_bool(list.items[0].vtype == MAL_VECTOR || list.items[0].vtype == MAL_LIST);
+}
+
+malval_t seq(mallist_t list) {
+  malval_t val = list.items[0];
+  if (val.vtype == MAL_NIL) {
+    return make_nil();
+  }
+  if (val.vtype == MAL_STRING) {
+    int len = strlen(val.val.str);
+    if (len == 0) {
+      return make_nil();
+    }
+    malval_t *items = malloc(len * sizeof(malval_t));
+    for (int i = 0; i < len; i++) {
+      char *s = malloc(2);
+      *s = val.val.str[i];
+      *(s + 1) = '\0';
+      *(items + i) = make_string(s);
+    }
+    return make_list(items, len);
+  }
+  if (val.val.list.len == 0) {
+    return make_nil();
+  }
+
+
+  malval_t *items = malloc(val.val.list.len * sizeof(malval_t));
+  for (int i = 0; i < val.val.list.len; i++) {
+    *(items + i) = val.val.list.items[i];
+  }
+  return make_list(items, val.val.list.len);
 }
 
 malval_t hashmap(mallist_t list) {
@@ -805,6 +858,7 @@ void gen_repl_env() {
     {"swap!", *swap},
     {"cons", *cons},
     {"concat", *concat},
+    {"reverse", *reverse},
     {"nth", *nth},
     {"first", *first},
     {"rest", *rest},
@@ -818,6 +872,7 @@ void gen_repl_env() {
     {"vector", *vector},
     {"vector?", *is_vector},
     {"sequential?", *is_sequential},
+    {"seq", *seq},
     {"hash-map", *hashmap},
     {"get", *hashmap_get},
     {"contains?", *contains},
@@ -836,6 +891,7 @@ void gen_repl_env() {
     {"macro?", *is_macro},
     {"fn?", *is_fn},
     {"time-ms", *time_ms},
+    {"readline", *readline},
     {"+", *add}, //FIXME
   };
 
@@ -1524,6 +1580,9 @@ int main(int argc, char* argv[]) {
   EVAL(val, repl_env);
 
   val = read_str("(defmacro! cond (fn* (& xs) (if (> (count xs) 0) (list 'if (first xs) (if (> (count xs) 1) (nth xs 1) (throw \"odd number of forms to cond\")) (cons 'cond (rest (rest xs)))))))");
+  EVAL(val, repl_env);
+
+  val = read_str("(def! conj (fn* (c & more) (if (vector? c) (apply vector (concat c more)) (concat (reverse more) c))))");
   EVAL(val, repl_env);
 
   if (argc > 1) {
