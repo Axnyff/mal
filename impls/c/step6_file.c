@@ -170,6 +170,10 @@ malval_t make_string(char *s) {
   return res;
 }
 
+int match_symbol(malval_t val, char* s) {
+  return val.vtype == MAL_SYMBOL && strcmp(val.val.str, s) == 0;
+}
+
 malval_t add(mallist_t l) {
   int count = 0;
   int i;
@@ -527,39 +531,43 @@ malval_t quasiquote(malval_t ast) {
     items[1] = ast;
     return make_list(items, 2);
   }
-  if (ast.val.list.items[0].vtype == MAL_SYMBOL &&
-      strcmp(ast.val.list.items[0].val.str, "unquote") == 0) {
+  if (match_symbol(ast.val.list.items[0], "unquote")) {
     return ast.val.list.items[1];
   }
 
   if (is_pair(ast.val.list.items[0])
-      && ast.val.list.items[0].val.list.items[0].vtype == MAL_SYMBOL 
-      && strcmp(ast.val.list.items[0].val.list.items[0].val.str, "splice-unquote") == 0) {
-    malval_t *items = malloc(100 * sizeof(malval_t));
-    int i;
+      && match_symbol(ast.val.list.items[0].val.list.items[0], "splice-unquote")) {
+    malval_t *items = malloc(3 * sizeof(malval_t));
     items[0] = make_symbol("concat");
     items[1] = quasiquote(ast.val.list.items[0].val.list.items[1]);
-    for (i = 0; i < ast.val.list.len; i++) {
-      items[i + 1] = quasiquote(ast.val.list.items[i]);
+
+    malval_t *items2 = malloc(100 * sizeof(malval_t));
+    for (int i = 0; i < ast.val.list.len - 1; i++) {
+      items2[i] = ast.val.list.items[i + 1];
     }
-    return make_list(items, ast.val.list.len + 2);
+
+    items[2] = quasiquote(make_list(items2, ast.val.list.len - 1));
+    return make_list(items, 3);
   }
   {
-    malval_t *items = malloc(100 * sizeof(malval_t));
-    int i;
+    malval_t *items = malloc(3 * sizeof(malval_t));
     items[0] = make_symbol("cons");
     items[1] = quasiquote(ast.val.list.items[0]);
-    for (i = 0; i < ast.val.list.len; i++) {
-      items[i + 1] = quasiquote(ast.val.list.items[i]);
+
+
+    malval_t *items2 = malloc(100 * sizeof(malval_t));
+    for (int i = 0; i < ast.val.list.len; i++) {
+      items2[i] = ast.val.list.items[i + 1];
     }
-    return make_list(items, ast.val.list.len + 2);
+
+    items[2] = make_list(items2, ast.val.list.len - 1);
+    return make_list(items, 3);
   }
 
   return ast;
 }
 
 malval_t EVAL(malval_t val, env_t *env) {
-  // THIS IS NECESSARY ( WTF?)
   pr_str(val, 1);
   while (1) {
     if (val.vtype != MAL_LIST) {
