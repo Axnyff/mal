@@ -1,5 +1,10 @@
 use rustyline::Editor;
 
+
+struct Reader {
+    position: 
+}
+
 fn main() {
     let mut rl = Editor::<()>::new();
     loop {
