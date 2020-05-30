@@ -8,8 +8,6 @@ class Val:
     def __init__(self, type, value):
         self.type = type
         self.value = value
-    def __getitem__(self, key):
-        print("getting " + str(key))
 
 class Reader:
     def __init__(self, tokens):

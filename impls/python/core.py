@@ -92,6 +92,9 @@ raw_ns = {
     "swap!": swap,
     "cons": lambda a,b: Val("list", [a] + b.value),
     "concat": concat,
+    "first": lambda a: Val("nil", []) if len(a.value) == 0 else a.value[0],
+    "rest": lambda a: Val("list", a.value[1:]),
+    "nth": lambda a, b: a.value[b.value],
 }
 
 ns = {}
