@@ -1,4 +1,10 @@
 def pr_str(val, print_readability = True):
+    if val["value"] == None:
+        return "nil"
+    if val["value"] == False:
+        return "false"
+    if val["value"] == True:
+        return "true"
     if (val["type"] == "number"):
         return str(val["value"])
     if (val["type"] == "symbol"):
@@ -42,3 +48,7 @@ def pr_str(val, print_readability = True):
 
     if (val["type"] == "error"):
         return "Error: " + pr_str(val["value"], print_readability)
+
+    if (val["type"] == "fn" or val["type"] == "custom_fn"):
+        return "#function"
+

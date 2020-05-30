@@ -64,6 +64,21 @@ def read_atom(reader):
             "value": num
         }
     except:
+        if token == "nil":
+            return {
+                    "type": "nil",
+                    "value": None
+                    }
+        if token == "true":
+            return {
+                    "type": "bool",
+                    "value": True
+                    }
+        if token == "false":
+            return {
+                    "type": "bool",
+                    "value": False
+                    }
         if token[0] == '"':
             if len(token) == 1 or token[-1] != '"':
                 raise "EOF"
