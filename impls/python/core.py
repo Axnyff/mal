@@ -59,8 +59,11 @@ def swap(atom, func, *args):
         atom.value = func.value(*arguments)
     return atom.value
 
-def deref(a):
-    return a.value
+def concat(*arg):
+    result = []
+    for l in list(arg):
+        result += l.value
+    return Val("list", result)
 
 raw_ns = {
     "+": lambda a,b : Val("number", a.value + b.value),
@@ -84,9 +87,11 @@ raw_ns = {
     "slurp": slurp,
     "atom": lambda a: Val("atom", a),
     "atom?": lambda a: Val("bool", a.type == "atom"),
-    "deref": deref,
+    "deref": lambda a: a.value,
     "reset!": reset,
     "swap!": swap,
+    "cons": lambda a,b: Val("list", [a] + b.value),
+    "concat": concat,
 }
 
 ns = {}
