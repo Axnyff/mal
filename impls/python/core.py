@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+import time
 from reader import Val, read_str
 from printer import pr_str
 
@@ -117,6 +118,36 @@ def assoc(d, *args):
         i += 2
     return Val("hashmap", res)
 
+def with_meta(value, meta):
+    return Val(value.type, value.value, meta)
+
+def conj(col, *args):
+    if (col.type == "vector"):
+        res = []
+        for i in col.value:
+            res.append(i)
+        for i in list(args):
+            res.append(i)
+        return Val("vector", res)
+    res = []
+    for i in col.value:
+        res.append(i)
+    for i in list(args):
+        res.insert(0, i)
+    return Val("list", res)
+
+def seq(col):
+    if len(col.value) == 0:
+        return Val("nil", [])
+    if col.type in ('vector', 'list'):
+        return Val("list", col.value)
+
+    res = []
+    for i in col.value:
+        res.append(Val("string", i))
+    return Val("list", res)
+
+
 raw_ns = {
     "+": lambda a,b : Val("number", a.value + b.value),
     "-": lambda a,b : Val("number", a.value - b.value),
@@ -154,6 +185,10 @@ raw_ns = {
     "false?": lambda a: Val("bool", a.type == 'bool' and a.value == False),
     "true?": lambda a: Val("bool", a.type == 'bool' and a.value == True),
     "symbol?": lambda a: Val("bool", a.type == 'symbol'),
+    "number?": lambda a: Val("bool", a.type == 'number'),
+    "string?": lambda a: Val("bool", a.type == 'string'),
+    "fn?": lambda a: Val("bool", a.type in ('fn', 'custom_fn')),
+    "macro?": lambda a: Val("bool", a.type == 'macro'),
     "symbol": lambda a: Val("symbol", a.value),
     "keyword": lambda a: a if a.type == "keyword" else Val("keyword", ":" + a.value),
     "vector": vector,
@@ -168,6 +203,12 @@ raw_ns = {
     "map?": lambda a: Val("bool", a.type == "hashmap"),
     "map": map_fn,
     "sequential?": lambda a: Val("bool", a.type in ('vector', 'list')),
+    "readline": lambda a: Val("string", raw_input(a.value)),
+    "time-ms": lambda: Val("number", int(round(time.time() * 1000))),
+    "meta": lambda a: a.get_meta(),
+    "with-meta": with_meta,
+    "conj": conj,
+    "seq": seq,
 }
 
 ns = {}

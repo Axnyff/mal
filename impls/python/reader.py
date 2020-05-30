@@ -7,9 +7,15 @@ regex = r"""[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"?|;.*|[^\s\[\]{}('"`,;)]*
 
 
 class Val:
-    def __init__(self, type, value):
+    def __init__(self, type, value, meta = None):
         self.type = type
         self.value = value
+        self.meta = meta
+
+    def get_meta(self):
+        if self.meta is None:
+            return Val("nil", [])
+        return self.meta
 
 class Reader:
     def __init__(self, tokens):
