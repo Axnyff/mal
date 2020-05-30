@@ -1,4 +1,4 @@
-from reader import Val
+from reader import Val, read_str
 from printer import pr_str
 
 def list_fn(*args):
@@ -41,6 +41,27 @@ def prn(*args):
     print(" ".join(map(lambda a:pr_str(a, True), list(args))))
     return Val("nil", [])
 
+def slurp(arg):
+    content = ""
+    with open(arg.value, "r") as f:
+        content = f.read()
+    return Val("string", content)
+
+def reset(a, b):
+    a.value = b
+    return b
+
+def swap(atom, func, *args):
+    arguments = [atom.value] +  list(args)
+    if func.type == "custom_fn":
+        atom.value = func.value["fn"](*arguments)
+    else: 
+        atom.value = func.value(*arguments)
+    return atom.value
+
+def deref(a):
+    return a.value
+
 raw_ns = {
     "+": lambda a,b : Val("number", a.value + b.value),
     "-": lambda a,b : Val("number", a.value - b.value),
@@ -59,6 +80,13 @@ raw_ns = {
     "str": str_fn,
     "println": println_fn,
     "prn": prn,
+    "read-string": lambda a: read_str(a.value),
+    "slurp": slurp,
+    "atom": lambda a: Val("atom", a),
+    "atom?": lambda a: Val("bool", a.type == "atom"),
+    "deref": deref,
+    "reset!": reset,
+    "swap!": swap,
 }
 
 ns = {}

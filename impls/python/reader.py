@@ -1,4 +1,5 @@
 import re
+from printer import pr_str
 
 regex = r"""[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"?|;.*|[^\s\[\]{}('"`,;)]*)"""
 
@@ -7,12 +8,6 @@ class Val:
     def __init__(self, type, value):
         self.type = type
         self.value = value
-    def __str__(self):
-        return "Type: " + self.type + " Value: " + str(self.value)
-
-    def __repr__(self):
-        return "Type: " + self.type + " Value: " + str(self.value)
-
 
 class Reader:
     def __init__(self, tokens):
@@ -51,7 +46,7 @@ def read_hashmap(reader):
     content = {}
 
     while (reader.peek() != '}'):
-        key = read_form(reader)["value"]
+        key = read_form(reader).value
         content[key] = read_form(reader)
     reader.next()
     return Val("hashmap", content)
@@ -101,14 +96,17 @@ def read_macro(reader, symbol):
     reader.next()
     return Val(
             "list",
-            [{
-                Val("symbol", symbol),
+            [Val("symbol", symbol),
                 read_form(reader),
-            }]
+            ]
     )
 
 def read_form(reader):
     token = reader.peek()
+    if token[0] == ";":
+        reader.next()
+        return read_form(reader)
+
     if token == "(":
         return read_list(reader)
     if token == "[":

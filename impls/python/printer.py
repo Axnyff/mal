@@ -39,12 +39,12 @@ def pr_str(val, print_readability = True):
 
     if (val.type == "hashmap"):
         content = []
-        for key, val in val.value.items():
-            if key[0] == ':':
+        for key in val.value:
+            if key[0] == ":":
                 content.append(key)
             else:
                 content.append('"' + key + '"')
-            content.append(pr_str(val, print_readability))
+            content.append(pr_str(val.value[key], print_readability))
         return "{" + " ".join(content) + "}"
 
     if (val.type == "error"):
@@ -52,4 +52,7 @@ def pr_str(val, print_readability = True):
 
     if (val.type == "fn" or val.type == "custom_fn"):
         return "#function"
+
+    if val.type == "atom":
+        return "(atom " + pr_str(val.value, print_readability) + ")"
 
