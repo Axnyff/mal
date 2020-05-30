@@ -2,6 +2,7 @@ import re
 
 regex = r"""[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"?|;.*|[^\s\[\]{}('"`,;)]*)"""
 
+
 class Reader:
     def __init__(self, tokens):
         self.tokens = tokens
