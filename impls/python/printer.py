@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
 def pr_str(val, print_readability = True):
     if val.type == "nil":
         return "nil"
@@ -8,7 +10,7 @@ def pr_str(val, print_readability = True):
     if (val.type == "number"):
         return str(val.value)
     if (val.type == "keyword"):
-        return val.value
+        return val.value.replace("ʞ", "")
     if (val.type == "symbol"):
         return val.value
     if (val.type == "string"):
@@ -40,8 +42,8 @@ def pr_str(val, print_readability = True):
     if (val.type == "hashmap"):
         content = []
         for key in val.value:
-            if key[0] == ":":
-                content.append(key)
+            if key[0:2] == "ʞ":
+                content.append(key[2:])
             else:
                 content.append('"' + key + '"')
             content.append(pr_str(val.value[key], print_readability))

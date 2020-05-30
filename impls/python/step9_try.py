@@ -1,3 +1,6 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+
 import sys
 from reader import read_str, Val
 from printer import pr_str
@@ -68,6 +71,20 @@ def eval(ast, env):
             return ast
 
         symbol = ast.value[0].value
+
+        if symbol == "try*":
+            if (len(ast.value) <= 2):
+                return eval(ast.value[1], env)
+            try:
+                return eval(ast.value[1], env)
+            except Exception as e:
+                error = Val("string", str(e))
+                if isinstance(e.args[0], Val):
+                    error = e.args[0]
+                new_env = Env(env)
+
+                new_env.set(ast.value[2].value[1].value, error)
+                return eval(ast.value[2].value[2], new_env)
 
         if symbol == "macroexpand":
             return macroexpand(ast.value[1], env)

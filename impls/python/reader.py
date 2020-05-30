@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
 import re
 from printer import pr_str
 
@@ -46,7 +48,7 @@ def read_hashmap(reader):
     content = {}
 
     while (reader.peek() != '}'):
-        key = read_form(reader).value
+        key= read_form(reader).value
         content[key] = read_form(reader)
     reader.next()
     return Val("hashmap", content)
@@ -65,7 +67,7 @@ def read_atom(reader):
         if token == "false":
             return Val("bool", False)
         if token[0] == ":":
-            return Val("keyword", token)
+            return Val("keyword", "ʞ" + token)
         if token[0] == '"':
             if len(token) == 1 or token[-1] != '"':
                 raise Exception("EOF")

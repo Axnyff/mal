@@ -1,8 +1,13 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
 from reader import Val, read_str
 from printer import pr_str
 
 def list_fn(*args):
     return Val("list", list(args))
+
+def vector(*args):
+    return Val("vector", list(args))
 
 def equal_fn(a, b):
     if a.type in ("vector", "list") and b.type in ("vector", "list"):
@@ -65,6 +70,53 @@ def concat(*arg):
         result += l.value
     return Val("list", result)
 
+def throw(arg):
+    raise Exception(arg)
+
+def apply(fn, *extra):
+    all_args = list(extra)
+    args = all_args[0:-1] + all_args[len(all_args) -1].value
+    if fn.type == 'fn':
+        return fn.value(*args)
+    return fn.value["fn"](*args)
+
+def map_fn(fn, col):
+    res = []
+    for i in col.value:
+        if fn.type == 'fn':
+            res.append(*fn.value(i))
+        else:
+            res.append(fn.value["fn"](i))
+    return Val("list", res)
+
+def hashmap(*args):
+    arg_list = list(args)
+    i = 0
+    res = {}
+    while i < len(arg_list):
+        res[args[i].value] = args[i + 1]
+        i += 2
+    return Val("hashmap", res)
+
+def dissoc(d, *args):
+    keys_to_remove = map(lambda a: a.value, args)
+    res = {}
+    for key in d.value:
+        if key not in keys_to_remove:
+            res[key] = d.value[key]
+    return Val("hashmap", res)
+
+def assoc(d, *args):
+    res = {}
+    for key in d.value:
+        res[key] = d.value[key]
+    arg_list = list(args)
+    i = 0
+    while i < len(arg_list):
+        res[arg_list[i].value] = arg_list[i + 1]
+        i += 2
+    return Val("hashmap", res)
+
 raw_ns = {
     "+": lambda a,b : Val("number", a.value + b.value),
     "-": lambda a,b : Val("number", a.value - b.value),
@@ -95,6 +147,27 @@ raw_ns = {
     "first": lambda a: Val("nil", []) if len(a.value) == 0 else a.value[0],
     "rest": lambda a: Val("list", a.value[1:]),
     "nth": lambda a, b: a.value[b.value],
+    "throw": throw,
+    "apply": apply,
+    "keyword?": lambda a: Val("bool", a.type == 'keyword'),
+    "nil?": lambda a: Val("bool", a.type == 'nil'),
+    "false?": lambda a: Val("bool", a.type == 'bool' and a.value == False),
+    "true?": lambda a: Val("bool", a.type == 'bool' and a.value == True),
+    "symbol?": lambda a: Val("bool", a.type == 'symbol'),
+    "symbol": lambda a: Val("symbol", a.value),
+    "keyword": lambda a: a if a.type == "keyword" else Val("keyword", ":" + a.value),
+    "vector": vector,
+    "vector?": lambda a: Val("bool", a.type == "vector"),
+    "keys": lambda a: Val("list", map(lambda b: Val("keyword", b) if b[0:2] == "ʞ" else Val("string", b), a.value.keys())),
+    "vals": lambda a: Val("list", a.value.values()),
+    "hash-map": hashmap,
+    "dissoc": dissoc,
+    "assoc": assoc,
+    "contains?": lambda a, b: Val("bool", b.value in a.value),
+    "get": lambda a, b: Val("nil", []) if b.value not in a.value else a.value[b.value],
+    "map?": lambda a: Val("bool", a.type == "hashmap"),
+    "map": map_fn,
+    "sequential?": lambda a: Val("bool", a.type in ('vector', 'list')),
 }
 
 ns = {}
