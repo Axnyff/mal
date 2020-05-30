@@ -3,6 +3,17 @@ import re
 regex = r"""[\s,]*(~@|[\[\]{}()'`~^@]|"(?:\\.|[^\\"])*"?|;.*|[^\s\[\]{}('"`,;)]*)"""
 
 
+class Val:
+    def __init__(self, type, value):
+        self.type = type
+        self.value = value
+    def __str__(self):
+        return "Type: " + self.type + " Value: " + str(self.value)
+
+    def __repr__(self):
+        return "Type: " + self.type + " Value: " + str(self.value)
+
+
 class Reader:
     def __init__(self, tokens):
         self.tokens = tokens
@@ -24,10 +35,7 @@ def read_list(reader):
     while (reader.peek() != ')'):
         content.append(read_form(reader))
     reader.next()
-    return {
-        "type": "list",
-        "value": content,
-    }
+    return Val("list", content)
 
 def read_vector(reader):
     reader.next()
@@ -36,10 +44,7 @@ def read_vector(reader):
     while (reader.peek() != ']'):
         content.append(read_form(reader))
     reader.next()
-    return {
-        "type": "vector",
-        "value": content,
-    }
+    return Val("vector", content)
 
 def read_hashmap(reader):
     reader.next()
@@ -49,39 +54,26 @@ def read_hashmap(reader):
         key = read_form(reader)["value"]
         content[key] = read_form(reader)
     reader.next()
-    return {
-        "type": "hashmap",
-        "value": content,
-    }
+    return Val("hashmap", content)
 
 def read_atom(reader):
     token = reader.next()
 
     try:
         num = int(token)
-        return {
-            "type": "number",
-            "value": num
-        }
+        return Val("number", num)
     except:
         if token == "nil":
-            return {
-                    "type": "nil",
-                    "value": None
-                    }
+            return Val("nil", [])
         if token == "true":
-            return {
-                    "type": "bool",
-                    "value": True
-                    }
+            return Val("bool", True)
         if token == "false":
-            return {
-                    "type": "bool",
-                    "value": False
-                    }
+            return Val("bool", False)
+        if token[0] == ":":
+            return Val("keyword", token)
         if token[0] == '"':
             if len(token) == 1 or token[-1] != '"':
-                raise "EOF"
+                raise Exception("EOF")
 
             res = ""
             i = 1
@@ -98,29 +90,22 @@ def read_atom(reader):
                         res += '"'
                 i += 1
             if token[i] != '"':
-                raise "EOF"
+                raise Exception("EOF")
 
 
-            return {
-                    "type": "string",
-                    "value": res
-            }
-        return {
-            "type": "symbol",
-            "value": token
-        }
+            return Val("string", res)
+        return Val("symbol", token)
 
 
 def read_macro(reader, symbol):
     reader.next()
-    return {
-            "type": "list",
-            "value": [{
-                "type": "symbol",
-                "value": symbol
-                }, read_form(reader)
-            ]
-    }
+    return Val(
+            "list",
+            [{
+                Val("symbol", symbol),
+                read_form(reader),
+            }]
+    )
 
 def read_form(reader):
     token = reader.peek()
@@ -143,16 +128,11 @@ def read_form(reader):
     if token == "^":
         reader.next()
         meta = read_form(reader)
-        return {
-                "type": "list",
-                "value": [{
-                    "type": "symbol",
-                    "value": "with-meta",
-                    },
+        return Val("list",
+                [Val("symbol", "with-meta"),
                     read_form(reader),
-                    meta]
-        }
-        return read_macro(reader, "splice-unquote")
+                    meta
+                ])
 
     return read_atom(reader)
 
@@ -162,11 +142,4 @@ def read_str(s):
         reader = Reader(tokens)
         return read_form(reader)
     except Exception as e:
-        print(e)
-        return {
-                "type": "error",
-                "value": {
-                    "type": "string",
-                    "value": "EOF",
-                }
-        }
+        raise Exception(Val("string", "EOF"))

@@ -1,4 +1,4 @@
-from reader import read_str
+from readerimport read_str
 from printer import pr_str
 from env import Env
 
