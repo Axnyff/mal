@@ -1,0 +1,2 @@
+#!/bin/bash
+exec fennel $(dirname $0)/${STEP:-stepA_mal}.fnl "${@}"
